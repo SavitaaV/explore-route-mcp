@@ -257,7 +257,7 @@ function GoogleMapComponent({
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const markersRef = useRef<google.maps.Marker[]>([]);
   const polylineRef = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
@@ -266,11 +266,8 @@ function GoogleMapComponent({
       center: { lat: 43.3, lng: -79.3 },
       zoom: 9,
       mapTypeId: "terrain",
+      // No custom styles — avoids InvalidValueError and the "can't load" warning
       disableDefaultUI: false,
-      styles: [
-        { featureType: "highway", elementType: "geometry", stylers: [{ visibility: "off" }] },
-        { featureType: "road.highway", elementType: "all", stylers: [{ saturation: -100 }] },
-      ],
     });
     mapInstanceRef.current = map;
   }, []);
@@ -278,58 +275,103 @@ function GoogleMapComponent({
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google || !route) return;
     if (polylineRef.current) polylineRef.current.setMap(null);
-    const path = window.google.maps.geometry?.encoding?.decodePath(route.encodedPolyline) ??
-      NIAGARA_ROUTE_WAYPOINTS.map((wp) => ({ lat: wp.lat, lng: wp.lng }));
+    // Fall back to known waypoints if geometry library isn't available
+    const path: google.maps.LatLngLiteral[] =
+      window.google.maps.geometry?.encoding
+        ? window.google.maps.geometry.encoding.decodePath(route.encodedPolyline).map((p) => ({
+            lat: p.lat(),
+            lng: p.lng(),
+          }))
+        : NIAGARA_ROUTE_WAYPOINTS.map((wp) => ({ lat: wp.lat, lng: wp.lng }));
+
     polylineRef.current = new window.google.maps.Polyline({
       path,
       geodesic: true,
       strokeColor: "#34D399",
-      strokeOpacity: 1,
-      strokeWeight: 4,
+      strokeOpacity: 0.9,
+      strokeWeight: 5,
       map: mapInstanceRef.current,
     });
   }, [route]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google || !merchants.length) return;
-    markersRef.current.forEach((m) => (m.map = null));
+    // Clear previous markers
+    markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
-    merchants.forEach((merchant) => {
-      const el = document.createElement("div");
-      el.innerHTML = getMerchantTypeIcon(merchant.type);
-      el.style.cssText = `font-size:20px;cursor:pointer;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));transition:transform 0.2s;`;
-      el.addEventListener("mouseenter", () => (el.style.transform = "scale(1.3)"));
-      el.addEventListener("mouseleave", () => (el.style.transform = "scale(1)"));
-      el.addEventListener("click", () => onPinClick(merchant.id));
-      // fallback if AdvancedMarkerElement not available
-      if (window.google.maps.marker?.AdvancedMarkerElement) {
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: { lat: merchant.lat, lng: merchant.lng },
-          map: mapInstanceRef.current,
-          content: el,
-          title: merchant.name,
-        });
-        markersRef.current.push(marker);
-      }
-    });
-  }, [merchants, onPinClick]);
 
-  return <div ref={mapRef} className="w-full h-full" />;
+    merchants.forEach((merchant) => {
+      const emoji = getMerchantTypeIcon(merchant.type);
+      const color = getMerchantTypeColor(merchant.type);
+      const isSelected = merchant.id === selectedMerchantId;
+
+      // Custom SVG icon — avoids AdvancedMarkerElement (needs Map ID) and
+      // suppresses the google.maps.Marker deprecation noise with a proper icon
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="48" viewBox="0 0 40 48">
+        <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+        </filter>
+        <path d="M20 2C11.16 2 4 9.16 4 18C4 30 20 46 20 46C20 46 36 30 36 18C36 9.16 28.84 2 20 2Z"
+          fill="${color}" stroke="white" stroke-width="2" filter="url(#s)"/>
+        <text x="20" y="22" text-anchor="middle" dominant-baseline="middle" font-size="${isSelected ? 14 : 13}">
+          ${emoji}
+        </text>
+      </svg>`;
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: merchant.lat, lng: merchant.lng },
+        map: mapInstanceRef.current,
+        title: merchant.name,
+        icon: {
+          url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svgIcon),
+          scaledSize: new window.google.maps.Size(isSelected ? 48 : 40, isSelected ? 58 : 48),
+          anchor: new window.google.maps.Point(isSelected ? 24 : 20, isSelected ? 58 : 48),
+        },
+      });
+
+      marker.addListener("click", () => onPinClick(merchant.id));
+      markersRef.current.push(marker);
+    });
+  }, [merchants, selectedMerchantId, onPinClick]);
+
+  return (
+    <div className="relative w-full h-full">
+      <div ref={mapRef} className="w-full h-full" />
+      {route && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full flex items-center gap-3 border border-white/10 z-10 pointer-events-none">
+          <span className="font-semibold">{route.distanceKm}km</span>
+          <span className="text-white/40">•</span>
+          <span>{route.durationMinutes} min</span>
+          <span className="text-white/40">•</span>
+          <span className="text-green-400">Highways avoided</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MapView({ route, merchants, journeyProgress, journeyStarted, selectedMerchantId, onPinClick, isLoading }: MapViewProps) {
   const [mapsLoaded, setMapsLoaded] = useState(false);
+  const [mapsError, setMapsError] = useState(false);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
   useEffect(() => {
-    if (!apiKey || window.google) return;
+    if (!apiKey) return;
+    // Already loaded
+    if (window.google?.maps) { setMapsLoaded(true); return; }
+
     window.initGoogleMap = () => setMapsLoaded(true);
+
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,marker&callback=initGoogleMap`;
+    // Use loading=async as recommended by Google
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry&loading=async&callback=initGoogleMap`;
     script.async = true;
+    script.defer = true;
+    script.onerror = () => setMapsError(true);
     document.head.appendChild(script);
+
     return () => {
-      document.head.removeChild(script);
+      if (document.head.contains(script)) document.head.removeChild(script);
       delete window.initGoogleMap;
     };
   }, [apiKey]);
@@ -345,7 +387,7 @@ export function MapView({ route, merchants, journeyProgress, journeyStarted, sel
     );
   }
 
-  if (apiKey && mapsLoaded) {
+  if (apiKey && mapsLoaded && !mapsError) {
     return (
       <GoogleMapComponent
         merchants={merchants}
@@ -358,6 +400,7 @@ export function MapView({ route, merchants, journeyProgress, journeyStarted, sel
     );
   }
 
+  // Fallback: SVG map (no key, or key error)
   return (
     <SvgMapPlaceholder
       merchants={merchants}
