@@ -6,22 +6,47 @@ import {
   useGetMcpTools,
 } from "@workspace/api-client-react";
 import { MapView } from "@/components/MapView";
-import { DiscoveryFeed } from "@/components/DiscoveryFeed";
+import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
 import { McpToolsPanel } from "@/components/McpToolsPanel";
-import { MapPin, Zap, ChevronDown, ChevronUp } from "lucide-react";
+import { MapPin, Zap, ChevronDown, ChevronUp, PersonStanding } from "lucide-react";
 
-export type FeedEvent =
-  | { kind: "system"; message: string; timestamp: Date }
-  | { kind: "merchant"; merchantId: string; timestamp: Date };
-
-const ROUTE_ORIGIN = "Toronto, ON";
-const ROUTE_DEST = "Niagara-on-the-Lake, ON";
+const ROUTE_ORIGIN = "Market Square, Niagara-on-the-Lake, ON";
+const ROUTE_DEST = "Fort George National Historic Site, Niagara-on-the-Lake, ON";
+const ROUTE_MODE = "walking";
 const MERCHANT_LAT = 43.2553;
 const MERCHANT_LNG = -79.0712;
 
+// Positions along the NOTL walking loop for the journey animation
+const JOURNEY_WAYPOINTS = [
+  { lat: 43.2553, lng: -79.0712, progress: 0 },    // Market Square start
+  { lat: 43.258, lng: -79.066, progress: 0.2 },    // heading toward Fort George
+  { lat: 43.2617, lng: -79.058, progress: 0.35 },  // Fort George
+  { lat: 43.2627, lng: -79.066, progress: 0.5 },   // Simcoe Park waterfront
+  { lat: 43.2585, lng: -79.073, progress: 0.65 },  // heading back to Queen St
+  { lat: 43.2554, lng: -79.0733, progress: 0.8 },  // Shaw Festival
+  { lat: 43.2547, lng: -79.0712, progress: 0.95 }, // Queen Street
+  { lat: 43.2553, lng: -79.0712, progress: 1 },    // Market Square end
+];
+
+function getPositionAtProgress(progress: number): { lat: number; lng: number } {
+  if (progress <= 0) return JOURNEY_WAYPOINTS[0];
+  if (progress >= 1) return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
+  for (let i = 1; i < JOURNEY_WAYPOINTS.length; i++) {
+    const prev = JOURNEY_WAYPOINTS[i - 1];
+    const next = JOURNEY_WAYPOINTS[i];
+    if (progress <= next.progress) {
+      const t = (progress - prev.progress) / (next.progress - prev.progress);
+      return {
+        lat: prev.lat + (next.lat - prev.lat) * t,
+        lng: prev.lng + (next.lng - prev.lng) * t,
+      };
+    }
+  }
+  return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
+}
+
 export default function Home() {
-  const [feedEvents, setFeedEvents] = useState<FeedEvent[]>([]);
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
   const [journeyStarted, setJourneyStarted] = useState(false);
   const [journeyProgress, setJourneyProgress] = useState(0);
@@ -33,40 +58,18 @@ export default function Home() {
   const { data: route, isLoading: routeLoading } = useGetScenicRoute({
     origin: ROUTE_ORIGIN,
     destination: ROUTE_DEST,
+    mode: ROUTE_MODE,
   });
 
   const { data: merchants, isLoading: merchantsLoading } = useGetMerchants({
     lat: MERCHANT_LAT,
     lng: MERCHANT_LNG,
-    radius: 15000,
+    radius: 800,
     type: "all",
   });
 
   const merchantCardMutation = useGetMerchantCard();
   const { data: mcpTools } = useGetMcpTools();
-
-  const addSystemEvent = useCallback((message: string) => {
-    setFeedEvents((prev) => [
-      ...prev,
-      { kind: "system", message, timestamp: new Date() },
-    ]);
-  }, []);
-
-  useEffect(() => {
-    if (route && !routeLoading) {
-      addSystemEvent(
-        `🗺️ Scenic route loaded — ${route.distanceKm}km via ${route.summary.split("(")[0].trim()}`
-      );
-    }
-  }, [route, routeLoading, addSystemEvent]);
-
-  useEffect(() => {
-    if (merchants && !merchantsLoading) {
-      addSystemEvent(
-        `📍 ${merchants.length} local merchants discovered along the Niagara Parkway`
-      );
-    }
-  }, [merchants, merchantsLoading, addSystemEvent]);
 
   const handlePinClick = useCallback(
     (merchantId: string) => {
@@ -74,83 +77,56 @@ export default function Home() {
       const merchant = merchants?.find((m) => m.id === merchantId);
       if (!merchant) return;
 
-      addSystemEvent(`🔍 MCP tool: get_nearby_merchants — fetching card for ${merchant.name}`);
-
-      setFeedEvents((prev) => [
-        ...prev,
-        { kind: "merchant", merchantId, timestamp: new Date() },
-      ]);
-
-      merchantCardMutation.mutate(
-        {
-          data: {
-            merchantId: merchant.id,
-            merchantName: merchant.name,
-            merchantType: merchant.type,
-          },
+      merchantCardMutation.mutate({
+        data: {
+          merchantId: merchant.id,
+          merchantName: merchant.name,
+          merchantType: merchant.type,
         },
-        {
-          onSuccess: (card) => {
-            addSystemEvent(
-              `✅ Shopify card loaded — ${card.products.length} products, checkout ready`
-            );
-          },
-        }
-      );
+      });
     },
-    [merchants, addSystemEvent, merchantCardMutation]
+    [merchants, merchantCardMutation]
   );
 
-  const triggerWatchAlert = useCallback(
-    (merchant: { name: string; type: string }) => {
-      setWatchAlert(merchant);
-      if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
-      alertTimeoutRef.current = setTimeout(() => setWatchAlert(null), 5000);
-    },
-    []
-  );
+  const triggerWatchAlert = useCallback((merchant: { name: string; type: string }) => {
+    setWatchAlert(merchant);
+    if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+    alertTimeoutRef.current = setTimeout(() => setWatchAlert(null), 5000);
+  }, []);
 
   const startJourney = useCallback(() => {
     if (journeyStarted) return;
     setJourneyStarted(true);
     setJourneyProgress(0);
-    addSystemEvent("🚗 Journey started — Toronto → Niagara-on-the-Lake via scenic route");
-    addSystemEvent("🤖 MCP server active — monitoring route for merchants");
 
-    const wineries = merchants?.filter((m) => m.type === "winery") ?? [];
     const allMerchants = merchants ?? [];
+    const wineries = allMerchants.filter((m) => m.type === "winery");
     let step = 0;
-    const totalSteps = 100;
+    const totalSteps = 120;
 
     journeyRef.current = setInterval(() => {
       step++;
       const progress = step / totalSteps;
       setJourneyProgress(progress);
 
-      // Trigger merchant discovery events at certain points
-      if (step === 20 && allMerchants[0]) {
-        addSystemEvent(`📡 MCP: Merchant detected — ${allMerchants[0].name} (${allMerchants[0].distanceFromRouteKm ?? 0.5}km off route)`);
+      if (step === 15 && allMerchants[0]) {
         handlePinClick(allMerchants[0].id);
       }
-      if (step === 40 && wineries[0]) {
-        addSystemEvent(`🍷 MCP: Winery proximity alert — ${wineries[0].name} in 5km`);
+      if (step === 42 && allMerchants[2]) {
+        handlePinClick(allMerchants[2].id);
+      }
+      if (step === 60 && wineries[0]) {
         triggerWatchAlert({ name: wineries[0].name, type: "winery" });
         handlePinClick(wineries[0].id);
       }
-      if (step === 60 && allMerchants[2]) {
-        addSystemEvent(`📡 MCP: Merchant detected — ${allMerchants[2].name}`);
-        handlePinClick(allMerchants[2].id);
-      }
-      if (step === 80 && wineries[1]) {
-        addSystemEvent(`🍷 MCP: Winery proximity alert — ${wineries[1].name} in 3km`);
-        triggerWatchAlert({ name: wineries[1].name, type: "winery" });
+      if (step === 85 && allMerchants[4]) {
+        handlePinClick(allMerchants[4].id);
       }
       if (step >= totalSteps) {
         if (journeyRef.current) clearInterval(journeyRef.current);
-        addSystemEvent("🏁 Journey complete — arrived in Niagara-on-the-Lake");
       }
-    }, 150);
-  }, [journeyStarted, merchants, addSystemEvent, handlePinClick, triggerWatchAlert]);
+    }, 120);
+  }, [journeyStarted, merchants, handlePinClick, triggerWatchAlert]);
 
   useEffect(() => {
     return () => {
@@ -159,10 +135,22 @@ export default function Home() {
     };
   }, []);
 
+  const userPosition = journeyStarted ? getPositionAtProgress(journeyProgress) : undefined;
+
   const merchantCardData =
     selectedMerchantId && merchantCardMutation.data?.merchant?.id === selectedMerchantId
       ? merchantCardMutation.data
       : null;
+
+  const routeContext = route
+    ? {
+        summary: route.summary,
+        distanceKm: route.distanceKm,
+        durationMinutes: route.durationMinutes,
+        mode: route.mode,
+        waypoints: route.waypoints,
+      }
+    : null;
 
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden bg-background">
@@ -174,13 +162,15 @@ export default function Home() {
           </div>
           <div>
             <h1 className="text-sm font-semibold text-foreground tracking-tight">Scenic Routes MCP</h1>
-            <p className="text-xs text-muted-foreground">Toronto → Niagara-on-the-Lake</p>
+            <div className="flex items-center gap-1.5">
+              <PersonStanding className="w-3 h-3 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">NOTL Old Town Walking Loop · {route?.distanceKm ?? 3.2}km</p>
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <button
-            data-testid="button-mcp-tools"
             onClick={() => setShowMcpTools((v) => !v)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
           >
@@ -191,16 +181,17 @@ export default function Home() {
 
           {!journeyStarted ? (
             <button
-              data-testid="button-start-journey"
               onClick={startJourney}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity"
+              disabled={routeLoading || merchantsLoading}
+              className="flex items-center gap-2 px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
             >
-              Start Journey
+              <PersonStanding className="w-3.5 h-3.5" />
+              Start Walk
             </button>
           ) : (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              {journeyProgress < 1 ? `${Math.round(journeyProgress * 100)}% of route` : "Arrived"}
+              {journeyProgress < 1 ? `${Math.round(journeyProgress * 100)}% of loop` : "Loop complete!"}
             </div>
           )}
         </div>
@@ -208,7 +199,7 @@ export default function Home() {
 
       {/* MCP Tools Dropdown */}
       {showMcpTools && mcpTools && (
-        <div className="flex-none border-b border-border bg-card/95 backdrop-blur-sm z-10 animate-fade-up">
+        <div className="flex-none border-b border-border bg-card/95 backdrop-blur-sm z-10">
           <McpToolsPanel tools={mcpTools} />
         </div>
       )}
@@ -227,20 +218,56 @@ export default function Home() {
             isLoading={routeLoading || merchantsLoading}
           />
 
+          {/* Merchant card overlay when selected */}
+          {merchantCardData && (
+            <div className="absolute bottom-24 left-4 right-4 z-20 bg-card/95 backdrop-blur-sm border border-border rounded-2xl p-4 shadow-xl animate-fade-up">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <p className="font-semibold text-sm text-foreground">{merchantCardData.merchant.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{merchantCardData.merchant.address}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedMerchantId(null)}
+                  className="text-muted-foreground hover:text-foreground text-lg leading-none -mt-0.5"
+                >×</button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {merchantCardData.products.slice(0, 2).map((p) => (
+                  <a
+                    key={p.id}
+                    href={p.checkoutUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-none flex items-center gap-2 bg-primary/10 border border-primary/25 rounded-xl px-3 py-2 hover:bg-primary/20 transition-colors group"
+                  >
+                    {p.imageUrl && (
+                      <img src={p.imageUrl} alt={p.title} className="w-10 h-10 rounded-lg object-cover" />
+                    )}
+                    <div>
+                      <p className="text-[11px] font-medium text-foreground line-clamp-1 max-w-[120px]">{p.title}</p>
+                      <p className="text-[11px] text-primary font-semibold">{p.price}</p>
+                    </div>
+                    <span className="text-[10px] text-primary group-hover:underline ml-1 shrink-0">Buy →</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Apple Watch overlay — bottom-left of map */}
           <div className="absolute bottom-6 left-6 z-20">
             <AppleWatch alert={watchAlert} progress={journeyProgress} />
           </div>
         </div>
 
-        {/* Right — Discovery Feed */}
+        {/* Right — AI Chat */}
         <div className="w-80 xl:w-96 flex-none border-l border-border flex flex-col bg-card/50 backdrop-blur-sm">
-          <DiscoveryFeed
-            events={feedEvents}
+          <AiChat
             merchants={merchants ?? []}
-            merchantCard={merchantCardData}
-            cardLoading={merchantCardMutation.isPending}
-            onPinClick={handlePinClick}
+            routeContext={routeContext}
+            journeyStarted={journeyStarted}
+            userPosition={userPosition}
+            onMerchantFocus={handlePinClick}
           />
         </div>
       </div>

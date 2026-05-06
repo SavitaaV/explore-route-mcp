@@ -6,37 +6,110 @@ const router = Router();
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const MOCK_SHOP_URL = "https://mock.shop/api";
 
-// Realistic mock route: Toronto → Niagara-on-the-Lake via Niagara Parkway
+// NOTL Old Town walking loop: Market Square → Fort George → Waterfront → Queen St → back
 const MOCK_ROUTE = {
   encodedPolyline:
-    "ohzmGj|{bNlAzBjB|DrB~EtBnFhBvEfBtE`BrEnBvFrB`GhBpFhBjFdBnE`BnD|AdD|ArDzAjDxAxC|AxCxAtCvArCrApCnApCjApCfAlCbAlC`AlCz@lCv@lCr@pCn@rCj@rCf@tCb@vC^xCZzCVzCRzCN|CJ|CF~CB~CC~CG~CK~CO|CS|CW|C[zC_@xCc@vCg@rCk@nCo@jCs@fCw@bC{@~B_A|Bc@|BYzBOxBExB",
-  distanceKm: 130,
-  durationMinutes: 95,
-  summary: "Queen Elizabeth Way → Niagara Parkway (scenic route avoiding 400-series highways)",
-  mapUrl: "https://maps.googleapis.com/maps/api/staticmap?size=600x400&path=enc:ohzmGj|{bNlAzBjB|D",
+    "ue|mGb_~_NiAuBoBiD{AmCeAqBeA}BmAaC{@mB}@sBq@oBi@oB]uBOyBAyB?}BJaC^gCp@iCvAiCpBcCjCqB|CaB`DqAxDoAnE_AlE_AnE_AlE_AnE{@nEq@nEe@pESlE?lEN~DZzD",
+  distanceKm: 3.2,
+  durationMinutes: 38,
+  summary: "Niagara-on-the-Lake Old Town Walking Loop",
+  mapUrl: "",
+  mode: "walking",
   waypoints: [
-    { lat: 43.6532, lng: -79.3832, name: "Toronto, ON" },
-    { lat: 43.2557, lng: -79.8711, name: "Hamilton, ON" },
-    { lat: 43.1167, lng: -79.2167, name: "Niagara Parkway North" },
-    { lat: 43.2553, lng: -79.0712, name: "Queenston Heights" },
-    { lat: 43.1594, lng: -79.0678, name: "Niagara-on-the-Lake, ON" },
+    { lat: 43.2553, lng: -79.0712, name: "Market Square" },
+    { lat: 43.2617, lng: -79.058, name: "Fort George National Historic Site" },
+    { lat: 43.2627, lng: -79.066, name: "Simcoe Park & Waterfront" },
+    { lat: 43.2554, lng: -79.0733, name: "Shaw Festival Theatre" },
+    { lat: 43.2547, lng: -79.0712, name: "Queen Street" },
+    { lat: 43.2553, lng: -79.0712, name: "Market Square" },
   ],
 };
 
-// Curated mock merchants along the Niagara Parkway
+// NOTL Old Town walkable merchants — all within 10 min walk
 const MOCK_MERCHANTS = [
   {
-    id: "inniskillin-winery",
-    name: "Inniskillin Wines",
-    type: "winery",
-    lat: 43.2317,
-    lng: -79.0767,
-    address: "1499 Line 3 Service Rd, Niagara-on-the-Lake, ON L0S 1J0",
-    rating: 4.7,
-    distanceFromRouteKm: 0.3,
-    photoUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400",
-    description: "World-famous icewine producer on the Niagara Parkway. Founded 1975.",
+    id: "greaves-jams",
+    name: "Greaves Jams & Marmalades",
+    type: "artisan",
+    lat: 43.2547,
+    lng: -79.0712,
+    address: "55 Queen St, Niagara-on-the-Lake, ON",
+    rating: 4.8,
+    distanceFromRouteKm: 0.05,
+    photoUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400",
+    description: "Family-run artisan jam makers since 1927. Over 30 flavours of preserves, chutneys, and marmalades made with Niagara fruit.",
     isOpen: true,
+    walkMinutes: 1,
+  },
+  {
+    id: "balzacs-coffee",
+    name: "Balzac's Coffee Roasters",
+    type: "cafe",
+    lat: 43.255,
+    lng: -79.0715,
+    address: "16 Queen St, Niagara-on-the-Lake, ON",
+    rating: 4.6,
+    distanceFromRouteKm: 0.1,
+    photoUrl: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400",
+    description: "Artisan coffee roasters with a gorgeous heritage-building café. Perfect mid-walk espresso stop.",
+    isOpen: true,
+    walkMinutes: 2,
+  },
+  {
+    id: "treadwell-farm",
+    name: "Treadwell Farm-to-Table",
+    type: "restaurant",
+    lat: 43.2601,
+    lng: -79.0698,
+    address: "114 Queen St, Niagara-on-the-Lake, ON",
+    rating: 4.7,
+    distanceFromRouteKm: 0.2,
+    photoUrl: "https://images.unsplash.com/photo-1493770348161-369560ae357d?w=400",
+    description: "Award-winning farm-to-table bistro sourcing directly from Niagara producers. Celebrated for seasonal menus and local wine pairings.",
+    isOpen: true,
+    walkMinutes: 4,
+  },
+  {
+    id: "shaw-festival-shop",
+    name: "Shaw Festival Theatre Shop",
+    type: "boutique",
+    lat: 43.2554,
+    lng: -79.0733,
+    address: "10 Queen's Parade, Niagara-on-the-Lake, ON",
+    rating: 4.5,
+    distanceFromRouteKm: 0.3,
+    photoUrl: "https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=400",
+    description: "Curated theatre merchandise, books, prints, and gifts at North America's premier Shaw festival. One-of-a-kind souvenirs.",
+    isOpen: true,
+    walkMinutes: 5,
+  },
+  {
+    id: "oliv-tasting-room",
+    name: "Oliv Tasting Room",
+    type: "artisan",
+    lat: 43.255,
+    lng: -79.0702,
+    address: "Ontario St, Niagara-on-the-Lake, ON",
+    rating: 4.7,
+    distanceFromRouteKm: 0.1,
+    photoUrl: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=400",
+    description: "Premium artisan olive oils and aged balsamic vinegars. Taste before you buy — pairings and gift sets available.",
+    isOpen: true,
+    walkMinutes: 2,
+  },
+  {
+    id: "niagara-home-bakery",
+    name: "Niagara Home Bakery",
+    type: "bakery",
+    lat: 43.2555,
+    lng: -79.0718,
+    address: "66 Queen St, Niagara-on-the-Lake, ON",
+    rating: 4.6,
+    distanceFromRouteKm: 0.05,
+    photoUrl: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400",
+    description: "Beloved local bakery with fresh-baked sourdough, butter tarts, and Niagara peach pastries. A NOTL institution.",
+    isOpen: true,
+    walkMinutes: 1,
   },
   {
     id: "peller-estates",
@@ -44,76 +117,38 @@ const MOCK_MERCHANTS = [
     type: "winery",
     lat: 43.1784,
     lng: -79.0612,
-    address: "290 John St E, Niagara-on-the-Lake, ON L0S 1J0",
+    address: "290 John St E, Niagara-on-the-Lake, ON",
     rating: 4.6,
     distanceFromRouteKm: 0.8,
     photoUrl: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?w=400",
-    description: "Award-winning estate winery with stunning vineyard views and restaurant.",
+    description: "Award-winning estate winery on the outskirts of Old Town. Famous for Icewine and vineyard restaurant.",
     isOpen: true,
+    walkMinutes: 18,
   },
   {
-    id: "niagara-oast-house",
-    name: "Niagara Oast House Brewers",
-    type: "brewery",
-    lat: 43.2421,
-    lng: -79.0834,
-    address: "2017 Niagara Stone Rd, Niagara-on-the-Lake, ON L0S 1J0",
+    id: "fort-george-shop",
+    name: "Fort George Historic Gift Shop",
+    type: "boutique",
+    lat: 43.2617,
+    lng: -79.058,
+    address: "51 Queen's Parade, Niagara-on-the-Lake, ON",
     rating: 4.5,
-    distanceFromRouteKm: 1.2,
-    photoUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400",
-    description: "Craft brewery in a restored 19th-century hop kiln. Local ingredients, seasonal beers.",
+    distanceFromRouteKm: 0.1,
+    photoUrl: "https://images.unsplash.com/photo-1557931406-ac11b1b58a26?w=400",
+    description: "Parks Canada heritage gifts, War of 1812 books, local history maps, and handcrafted reproductions at this national historic site.",
     isOpen: true,
-  },
-  {
-    id: "niagara-artisan-market",
-    name: "Greaves Jams & Marmalades",
-    type: "artisan",
-    lat: 43.2553,
-    lng: -79.0712,
-    address: "55 Queen St, Niagara-on-the-Lake, ON L0S 1J0",
-    rating: 4.8,
-    distanceFromRouteKm: 0.5,
-    photoUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400",
-    description: "Family-run artisan jam makers since 1927. Over 30 flavours of jams and preserves.",
-    isOpen: true,
-  },
-  {
-    id: "treadwell-farm",
-    name: "Treadwell Farm-to-Table",
-    type: "cafe",
-    lat: 43.2601,
-    lng: -79.0698,
-    address: "114 Queen St, Niagara-on-the-Lake, ON L0S 1J0",
-    rating: 4.6,
-    distanceFromRouteKm: 0.2,
-    photoUrl: "https://images.unsplash.com/photo-1493770348161-369560ae357d?w=400",
-    description: "Celebrated farm-to-table bistro sourcing from local Niagara producers.",
-    isOpen: true,
-  },
-  {
-    id: "konzelmann-winery",
-    name: "Konzelmann Estate Winery",
-    type: "winery",
-    lat: 43.2901,
-    lng: -79.0512,
-    address: "1096 Lakeshore Rd, Niagara-on-the-Lake, ON L0S 1J0",
-    rating: 4.5,
-    distanceFromRouteKm: 0.4,
-    photoUrl: "https://images.unsplash.com/photo-1474722883778-792e7990302f?w=400",
-    description: "Lakeside estate winery with breathtaking views of Lake Ontario.",
-    isOpen: false,
+    walkMinutes: 8,
   },
 ];
 
-// Fetch scenic route from Google Maps Routes API or return mock
-async function fetchScenicRoute(origin: string, destination: string) {
+async function fetchScenicRoute(origin: string, destination: string, mode: string = "walking") {
   if (!GOOGLE_MAPS_API_KEY) {
-    logger.info("No Google Maps API key set — returning mock route");
-    return MOCK_ROUTE;
+    logger.info("No Google Maps API key — returning mock NOTL walking route");
+    return { ...MOCK_ROUTE, mode };
   }
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&avoid=highways&key=${GOOGLE_MAPS_API_KEY}`;
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
     const res = await fetch(url);
     const data = (await res.json()) as {
       status: string;
@@ -122,7 +157,6 @@ async function fetchScenicRoute(origin: string, destination: string) {
         legs?: Array<{
           distance?: { text: string; value: number };
           duration?: { text: string; value: number };
-          steps?: Array<{ html_instructions: string }>;
         }>;
         summary?: string;
       }>;
@@ -130,7 +164,7 @@ async function fetchScenicRoute(origin: string, destination: string) {
 
     if (data.status !== "OK" || !data.routes?.[0]) {
       logger.warn({ status: data.status }, "Google Maps returned non-OK status, using mock");
-      return MOCK_ROUTE;
+      return { ...MOCK_ROUTE, mode };
     }
 
     const route = data.routes[0];
@@ -139,36 +173,32 @@ async function fetchScenicRoute(origin: string, destination: string) {
 
     return {
       encodedPolyline,
-      distanceKm: Math.round(((leg?.distance?.value ?? 130000) / 1000) * 10) / 10,
-      durationMinutes: Math.round((leg?.duration?.value ?? 5700) / 60),
-      summary: `${route.summary ?? "Niagara Parkway scenic route"} (avoiding highways)`,
+      distanceKm: Math.round(((leg?.distance?.value ?? 3200) / 1000) * 10) / 10,
+      durationMinutes: Math.round((leg?.duration?.value ?? 2280) / 60),
+      summary: `${route.summary ?? "NOTL Old Town"} (${mode} loop)`,
       mapUrl: `https://maps.googleapis.com/maps/api/staticmap?size=600x400&path=enc:${encodedPolyline}&key=${GOOGLE_MAPS_API_KEY}`,
       waypoints: MOCK_ROUTE.waypoints,
+      mode,
     };
   } catch (err) {
     logger.error({ err }, "Error fetching scenic route, using mock");
-    return MOCK_ROUTE;
+    return { ...MOCK_ROUTE, mode };
   }
 }
 
-// Fetch nearby merchants from Google Places API or return mock
-async function fetchNearbyMerchants(
-  lat: number,
-  lng: number,
-  radius: number = 5000,
-  type: string = "all"
-) {
+async function fetchNearbyMerchants(lat: number, lng: number, radius: number = 800, type: string = "all") {
   if (!GOOGLE_MAPS_API_KEY) {
-    logger.info("No Google Maps API key — returning mock merchants");
-    const filtered =
-      type === "all"
-        ? MOCK_MERCHANTS
-        : MOCK_MERCHANTS.filter((m) => m.type === type);
+    logger.info("No Google Maps API key — returning mock NOTL merchants");
+    const filtered = type === "all" ? MOCK_MERCHANTS : MOCK_MERCHANTS.filter((m) => m.type === type);
     return filtered;
   }
 
   try {
-    const placeType = type === "winery" ? "tourist_attraction" : type === "bakery" ? "bakery" : "point_of_interest";
+    const placeType =
+      type === "bakery" ? "bakery" :
+      type === "cafe" ? "cafe" :
+      type === "restaurant" ? "restaurant" :
+      "tourist_attraction";
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${placeType}&key=${GOOGLE_MAPS_API_KEY}`;
     const res = await fetch(url);
     const data = (await res.json()) as {
@@ -191,24 +221,30 @@ async function fetchNearbyMerchants(
     }
 
     return data.results.slice(0, 8).map((place) => {
-      const placeType =
-        place.types?.includes("food") ? "cafe" :
-        place.types?.includes("bakery") ? "bakery" : "winery";
+      const pType =
+        place.types?.includes("bakery") ? "bakery" :
+        place.types?.includes("cafe") ? "cafe" :
+        place.types?.includes("restaurant") ? "restaurant" :
+        "boutique";
       const photoRef = place.photos?.[0]?.photo_reference;
+      const distLat = (place.geometry?.location?.lat ?? lat) - lat;
+      const distLng = (place.geometry?.location?.lng ?? lng) - lng;
+      const distKm = Math.round(Math.sqrt(distLat * distLat + distLng * distLng) * 111 * 10) / 10;
       return {
         id: place.place_id,
         name: place.name,
-        type: placeType,
+        type: pType,
         lat: place.geometry?.location?.lat ?? lat,
         lng: place.geometry?.location?.lng ?? lng,
-        address: place.vicinity ?? "",
+        address: place.vicinity ?? "Niagara-on-the-Lake, ON",
         rating: place.rating ?? null,
-        distanceFromRouteKm: Math.round(Math.random() * 20) / 10,
+        distanceFromRouteKm: distKm,
         photoUrl: photoRef
           ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${GOOGLE_MAPS_API_KEY}`
           : null,
-        description: `Local ${placeType} in the Niagara region.`,
+        description: `Local ${pType} in Niagara-on-the-Lake Old Town.`,
         isOpen: place.opening_hours?.open_now ?? null,
+        walkMinutes: Math.round(distKm * 12),
       };
     });
   } catch (err) {
@@ -217,7 +253,6 @@ async function fetchNearbyMerchants(
   }
 }
 
-// Fetch Shopify products from Mock.shop
 async function fetchShopifyProducts(merchantType: string) {
   const query = `{
     products(first: 3) {
@@ -271,16 +306,13 @@ async function fetchShopifyProducts(merchantType: string) {
       const product = edge.node;
       const variant = product.variants.edges[0]?.node;
       const image = product.images.edges[0]?.node;
-      const variantId = variant?.id ?? "";
-      // Build a proper mock checkout URL
-      const encodedVariant = encodeURIComponent(variantId);
       const checkoutUrl = `https://mock.shop/products/${product.id.replace("gid://shopify/Product/", "")}`;
-
       return {
         id: product.id,
-        title: merchantType === "winery"
-          ? product.title.replace(/product/i, "Reserve Icewine")
-          : product.title,
+        title:
+          merchantType === "winery" ? product.title.replace(/product/i, "Reserve Icewine") :
+          merchantType === "bakery" ? product.title.replace(/product/i, "Fresh Sourdough") :
+          product.title,
         price: `$${parseFloat(variant?.price?.amount ?? "25").toFixed(2)} ${variant?.price?.currencyCode ?? "CAD"}`,
         imageUrl: image?.url ?? null,
         checkoutUrl,
@@ -291,15 +323,15 @@ async function fetchShopifyProducts(merchantType: string) {
     return [
       {
         id: "mock-1",
-        title: merchantType === "winery" ? "Reserve Icewine 2022" : "Artisan Preserves Gift Set",
-        price: "$45.00 CAD",
+        title: merchantType === "winery" ? "Reserve Icewine 2022" : merchantType === "bakery" ? "Sourdough Loaf + Butter Tarts" : "Artisan Gift Set",
+        price: merchantType === "winery" ? "$65.00 CAD" : "$18.00 CAD",
         imageUrl: "https://images.unsplash.com/photo-1474722883778-792e7990302f?w=400",
         checkoutUrl: "https://mock.shop/products/1",
       },
       {
         id: "mock-2",
-        title: merchantType === "winery" ? "Cabernet Franc Reserve" : "Local Honey Collection",
-        price: "$32.00 CAD",
+        title: merchantType === "winery" ? "Cabernet Franc Reserve" : merchantType === "cafe" ? "Seasonal Blend Bag 250g" : "Local Honey Collection",
+        price: merchantType === "winery" ? "$42.00 CAD" : "$22.00 CAD",
         imageUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400",
         checkoutUrl: "https://mock.shop/products/2",
       },
@@ -309,7 +341,7 @@ async function fetchShopifyProducts(merchantType: string) {
 
 // GET /api/scenic-route
 router.get("/scenic-route", async (req, res) => {
-  const { origin, destination } = req.query;
+  const { origin, destination, mode } = req.query;
 
   if (!origin || !destination) {
     res.status(400).json({ error: "origin and destination query params are required" });
@@ -317,7 +349,7 @@ router.get("/scenic-route", async (req, res) => {
   }
 
   try {
-    const route = await fetchScenicRoute(String(origin), String(destination));
+    const route = await fetchScenicRoute(String(origin), String(destination), String(mode ?? "walking"));
     res.json(route);
   } catch (err) {
     req.log.error({ err }, "Failed to get scenic route");
@@ -336,7 +368,7 @@ router.get("/merchants", async (req, res) => {
 
   const latNum = parseFloat(String(lat));
   const lngNum = parseFloat(String(lng));
-  const radiusNum = radius ? parseFloat(String(radius)) : 5000;
+  const radiusNum = radius ? parseFloat(String(radius)) : 800;
 
   if (isNaN(latNum) || isNaN(lngNum)) {
     res.status(400).json({ error: "lat and lng must be valid numbers" });
@@ -369,27 +401,26 @@ router.post("/merchant-card", async (req, res) => {
     const merchant = MOCK_MERCHANTS.find((m) => m.id === merchantId) ?? {
       id: merchantId,
       name: merchantName,
-      type: merchantType ?? "winery",
+      type: merchantType ?? "boutique",
       lat: 43.2553,
       lng: -79.0712,
-      address: "Niagara-on-the-Lake, ON",
+      address: "Queen St, Niagara-on-the-Lake, ON",
       rating: 4.5,
-      distanceFromRouteKm: 0.5,
+      distanceFromRouteKm: 0.1,
       photoUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400",
-      description: `Local ${merchantType ?? "merchant"} along the scenic Niagara Parkway route.`,
+      description: `Local ${merchantType ?? "shop"} in NOTL Old Town.`,
       isOpen: true,
+      walkMinutes: 2,
     };
 
-    const products = await fetchShopifyProducts(merchantType ?? "winery");
-
-    // Build the cart checkout URL using Mock.shop
+    const products = await fetchShopifyProducts(merchantType ?? "boutique");
     const checkoutUrl = products[0]?.checkoutUrl ?? "https://mock.shop/";
 
     res.json({
       merchant,
       products,
       checkoutUrl,
-      hapticDistance: 5, // trigger wearable alert at 5km
+      hapticDistance: 0.3,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get merchant card");
@@ -403,12 +434,13 @@ router.get("/mcp-tools", (_req, res) => {
     {
       name: "get_scenic_route",
       description:
-        "Finds a scenic route between two locations avoiding highways. Uses the Niagara Parkway for Toronto–Niagara trips. Returns an encoded polyline, distance, duration, and waypoints.",
+        "Get a walking or biking route within Niagara-on-the-Lake Old Town. Returns a ~3km loop from Market Square through Fort George, the waterfront, and Queen Street with encoded polyline, distance, and duration.",
       inputSchema: {
         type: "object",
         properties: {
-          origin: { type: "string", description: "Starting location (address or lat,lng)" },
-          destination: { type: "string", description: "Ending location (address or lat,lng)" },
+          origin: { type: "string", description: "Start location (e.g. 'Market Square, NOTL')" },
+          destination: { type: "string", description: "End location (e.g. 'Fort George, NOTL')" },
+          mode: { type: "string", enum: ["walking", "bicycling"], description: "Travel mode" },
         },
         required: ["origin", "destination"],
       },
@@ -416,16 +448,16 @@ router.get("/mcp-tools", (_req, res) => {
     {
       name: "get_nearby_merchants",
       description:
-        "Discovers independent merchants (wineries, artisan bakeries, craft breweries) near a point on the scenic route. Returns Shopify-linked merchant cards with one-tap checkout.",
+        "Discover independent merchants within walking distance in NOTL Old Town (artisan shops, cafés, bakeries, wineries, boutiques). Returns Shopify-linked merchant cards with one-tap checkout for each.",
       inputSchema: {
         type: "object",
         properties: {
-          lat: { type: "number", description: "Latitude" },
-          lng: { type: "number", description: "Longitude" },
-          radius: { type: "number", description: "Search radius in meters (default 5000)" },
+          lat: { type: "number", description: "Latitude of current position" },
+          lng: { type: "number", description: "Longitude of current position" },
+          radius: { type: "number", description: "Search radius in meters (default 800)" },
           type: {
             type: "string",
-            enum: ["winery", "bakery", "artisan", "cafe", "brewery", "all"],
+            enum: ["winery", "bakery", "artisan", "cafe", "restaurant", "boutique", "all"],
             description: "Merchant category filter",
           },
         },
@@ -436,3 +468,4 @@ router.get("/mcp-tools", (_req, res) => {
 });
 
 export default router;
+export { MOCK_MERCHANTS };

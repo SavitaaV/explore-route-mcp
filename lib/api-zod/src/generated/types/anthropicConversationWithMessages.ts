@@ -5,9 +5,11 @@
  * Scenic Routes MCP API – foot/bike discovery in Niagara-on-the-Lake powered by Google Maps + Claude
  * OpenAPI spec version: 0.1.0
  */
+import type { AnthropicMessage } from "./anthropicMessage";
 
-export interface MerchantCardRequest {
-  merchantId: string;
-  merchantName: string;
-  merchantType: string;
+export interface AnthropicConversationWithMessages {
+  id: number;
+  title: string;
+  createdAt: Date;
+  messages: AnthropicMessage[];
 }

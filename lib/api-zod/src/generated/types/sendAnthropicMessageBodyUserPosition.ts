@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MerchantCardRequest {
-  merchantId: string;
-  merchantName: string;
-  merchantType: string;
-}
+/**
+ * Current user lat/lng position on route
+ */
+export type SendAnthropicMessageBodyUserPosition = { [key: string]: unknown };

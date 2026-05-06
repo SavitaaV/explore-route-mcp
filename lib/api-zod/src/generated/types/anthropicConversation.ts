@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MerchantCardRequest {
-  merchantId: string;
-  merchantName: string;
-  merchantType: string;
+export interface AnthropicConversation {
+  id: number;
+  title: string;
+  createdAt: Date;
 }

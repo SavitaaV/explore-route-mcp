@@ -40,14 +40,16 @@ declare global {
   }
 }
 
+// NOTL Old Town walking loop waypoints
 const NIAGARA_ROUTE_WAYPOINTS = [
-  { lat: 43.6532, lng: -79.3832 }, // Toronto
-  { lat: 43.5553, lng: -79.6317 }, // Mississauga
-  { lat: 43.2557, lng: -79.8711 }, // Hamilton
-  { lat: 43.1701, lng: -79.5637 }, // Grimsby
-  { lat: 43.1167, lng: -79.2167 }, // Beamsville
-  { lat: 43.2553, lng: -79.0712 }, // Queenston Heights
-  { lat: 43.1594, lng: -79.0678 }, // Niagara-on-the-Lake
+  { lat: 43.2553, lng: -79.0712 }, // Market Square
+  { lat: 43.258, lng: -79.066 },   // toward Fort George
+  { lat: 43.2617, lng: -79.058 },  // Fort George
+  { lat: 43.2627, lng: -79.066 },  // Simcoe Park waterfront
+  { lat: 43.2585, lng: -79.073 },  // heading back
+  { lat: 43.2554, lng: -79.0733 }, // Shaw Festival
+  { lat: 43.2547, lng: -79.0712 }, // Queen Street
+  { lat: 43.2553, lng: -79.0712 }, // Market Square (loop back)
 ];
 
 function getMerchantTypeIcon(type: string) {
@@ -88,10 +90,10 @@ function SvgMapPlaceholder({
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Map real lat/lng to SVG coords
+  // Map real lat/lng to SVG coords — zoomed into NOTL Old Town
   const mapToSVG = (lat: number, lng: number) => {
-    const minLat = 43.1, maxLat = 43.75;
-    const minLng = -79.95, maxLng = -79.0;
+    const minLat = 43.248, maxLat = 43.268;
+    const minLng = -79.082, maxLng = -79.052;
     const x = ((lng - minLng) / (maxLng - minLng)) * 760 + 20;
     const y = ((maxLat - lat) / (maxLat - minLat)) * 460 + 20;
     return { x, y };
@@ -131,12 +133,16 @@ function SvgMapPlaceholder({
         </defs>
         <rect width="800" height="500" fill="url(#terrain)" />
 
-        {/* Lake Ontario suggestion */}
-        <ellipse cx="630" cy="80" rx="180" ry="60" fill="rgba(59,130,246,0.15)" />
-        <text x="590" y="75" fill="rgba(147,197,253,0.5)" fontSize="11" fontFamily="sans-serif">Lake Ontario</text>
+        {/* Lake Ontario to the north */}
+        <rect x="0" y="0" width="800" height="60" fill="rgba(59,130,246,0.18)" rx="0" />
+        <text x="20" y="38" fill="rgba(147,197,253,0.6)" fontSize="13" fontFamily="sans-serif" fontWeight="600">Lake Ontario</text>
 
-        {/* Niagara River */}
-        <path d="M 740 100 Q 745 250 740 420" stroke="rgba(59,130,246,0.3)" strokeWidth="8" fill="none" strokeLinecap="round" />
+        {/* Niagara River to the east */}
+        <rect x="745" y="0" width="55" height="500" fill="rgba(59,130,246,0.15)" />
+        <text x="748" y="260" fill="rgba(147,197,253,0.5)" fontSize="10" fontFamily="sans-serif" transform="rotate(90 748 260)">Niagara River</text>
+
+        {/* Queen Street label */}
+        <text x="380" y="270" fill="rgba(255,255,255,0.45)" fontSize="11" fontFamily="sans-serif" fontWeight="500">Queen Street</text>
 
         {/* Scenic route — dashed background */}
         <path d={pathD} stroke="rgba(255,255,255,0.1)" strokeWidth="10" fill="none" strokeLinecap="round" strokeLinejoin="round" />
@@ -166,28 +172,29 @@ function SvgMapPlaceholder({
           />
         )}
 
-        {/* City labels */}
-        {NIAGARA_ROUTE_WAYPOINTS.map((wp, i) => {
-          if (i !== 0 && i !== NIAGARA_ROUTE_WAYPOINTS.length - 1) return null;
-          const { x, y } = mapToSVG(wp.lat, wp.lng);
+        {/* Waypoint labels */}
+        {[
+          { lat: 43.2553, lng: -79.0712, label: "Market Square ★" },
+          { lat: 43.2617, lng: -79.058, label: "Fort George" },
+          { lat: 43.2627, lng: -79.066, label: "Waterfront" },
+          { lat: 43.2554, lng: -79.0733, label: "Shaw Festival" },
+        ].map(({ lat, lng, label }) => {
+          const { x, y } = mapToSVG(lat, lng);
           return (
-            <g key={i}>
-              <circle cx={x} cy={y} r="5" fill="white" opacity="0.8" />
-              <text x={x + 8} y={y + 4} fill="rgba(255,255,255,0.8)" fontSize="10" fontFamily="sans-serif" fontWeight="600">
-                {i === 0 ? "Toronto" : "Niagara-on-the-Lake"}
+            <g key={label}>
+              <circle cx={x} cy={y} r="4" fill="white" opacity="0.7" />
+              <text x={x + 7} y={y + 4} fill="rgba(255,255,255,0.75)" fontSize="9" fontFamily="sans-serif" fontWeight="600">
+                {label}
               </text>
             </g>
           );
         })}
 
-        {/* Car marker */}
+        {/* Walker marker */}
         {journeyStarted && carX && carY && (
-          <g transform={`translate(${carX - 12}, ${carY - 10})`}>
-            <rect width="24" height="14" rx="4" fill="#FCD34D" />
-            <rect x="3" y="2" width="7" height="5" rx="1" fill="rgba(0,0,0,0.3)" />
-            <rect x="14" y="2" width="7" height="5" rx="1" fill="rgba(0,0,0,0.3)" />
-            <circle cx="5" cy="14" r="3" fill="#1F2937" />
-            <circle cx="19" cy="14" r="3" fill="#1F2937" />
+          <g transform={`translate(${carX - 10}, ${carY - 22})`}>
+            <circle cx="10" cy="5" r="5" fill="#FCD34D" stroke="white" strokeWidth="1.5" />
+            <path d="M10 10 L7 22 M10 10 L13 22 M7 14 L13 14" stroke="#FCD34D" strokeWidth="2" strokeLinecap="round" />
           </g>
         )}
 
@@ -225,16 +232,11 @@ function SvgMapPlaceholder({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full flex items-center gap-3 border border-white/10">
           <span className="font-semibold">{route.distanceKm}km</span>
           <span className="text-white/40">•</span>
-          <span>{route.durationMinutes} min</span>
+          <span>{route.durationMinutes} min walk</span>
           <span className="text-white/40">•</span>
-          <span className="text-green-400">Highways avoided</span>
+          <span className="text-green-400">NOTL Old Town loop</span>
         </div>
       )}
-
-      {/* API key notice */}
-      <div className="absolute bottom-4 right-4 bg-black/50 backdrop-blur-sm text-white/70 text-[10px] px-3 py-1.5 rounded-lg border border-white/10 max-w-[200px]">
-        Add <code className="text-amber-400">GOOGLE_MAPS_API_KEY</code> secret to enable live Google Maps
-      </div>
     </div>
   );
 }
@@ -263,10 +265,9 @@ function GoogleMapComponent({
   useEffect(() => {
     if (!mapRef.current || !window.google) return;
     const map = new window.google.maps.Map(mapRef.current, {
-      center: { lat: 43.3, lng: -79.3 },
-      zoom: 9,
-      mapTypeId: "terrain",
-      // No custom styles — avoids InvalidValueError and the "can't load" warning
+      center: { lat: 43.2575, lng: -79.0665 },
+      zoom: 15,
+      mapTypeId: "roadmap",
       disableDefaultUI: false,
     });
     mapInstanceRef.current = map;
@@ -341,9 +342,9 @@ function GoogleMapComponent({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full flex items-center gap-3 border border-white/10 z-10 pointer-events-none">
           <span className="font-semibold">{route.distanceKm}km</span>
           <span className="text-white/40">•</span>
-          <span>{route.durationMinutes} min</span>
+          <span>{route.durationMinutes} min walk</span>
           <span className="text-white/40">•</span>
-          <span className="text-green-400">Highways avoided</span>
+          <span className="text-green-400">NOTL Old Town loop</span>
         </div>
       )}
     </div>

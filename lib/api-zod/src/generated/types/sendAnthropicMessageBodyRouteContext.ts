@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface MerchantCardRequest {
-  merchantId: string;
-  merchantName: string;
-  merchantType: string;
-}
+/**
+ * MCP route context injected from Scenic Routes
+ */
+export type SendAnthropicMessageBodyRouteContext = { [key: string]: unknown };
