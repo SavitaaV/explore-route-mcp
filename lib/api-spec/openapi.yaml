@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Scenic Routes MCP API – orchestrates Google Maps & Shopify for scenic merchant discovery
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: scenic
+    description: Scenic route and merchant discovery
+  - name: mcp
+    description: MCP tool protocol
 paths:
   /healthz:
     get:
@@ -24,6 +28,147 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /scenic-route:
+    get:
+      operationId: getScenicRoute
+      tags: [scenic]
+      summary: Get scenic route
+      description: Returns a scenic route between two points avoiding highways, using Google Maps Routes API
+      parameters:
+        - name: origin
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Origin address or lat,lng (e.g. "Toronto, ON")
+        - name: destination
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Destination address or lat,lng (e.g. "Niagara-on-the-Lake, ON")
+      responses:
+        "200":
+          description: Scenic route with encoded polyline and waypoints
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScenicRoute"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /merchants:
+    get:
+      operationId: getMerchants
+      tags: [scenic]
+      summary: Get nearby merchants
+      description: Returns independent merchants (wineries, bakeries, artisans) near a location using Google Places API
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+          description: Latitude
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+          description: Longitude
+        - name: radius
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Search radius in meters (default 5000)
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Merchant type filter (winery, bakery, artisan, all)
+      responses:
+        "200":
+          description: List of nearby merchants with Shopify checkout links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Merchant"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /merchant-card:
+    post:
+      operationId: getMerchantCard
+      tags: [scenic]
+      summary: Get merchant card with Shopify checkout
+      description: Returns a rich merchant card including Shopify product listings and a one-tap checkout URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MerchantCardRequest"
+      responses:
+        "200":
+          description: Merchant card with products and checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantCard"
+        "404":
+          description: Merchant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /mcp-tools:
+    get:
+      operationId: getMcpTools
+      tags: [mcp]
+      summary: List available MCP tools
+      description: Returns metadata about the registered MCP tools (get_scenic_route, get_nearby_merchants)
+      responses:
+        "200":
+          description: List of MCP tool definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/McpTool"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +179,161 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    RouteWaypoint:
+      type: object
+      properties:
+        lat:
+          type: number
+        lng:
+          type: number
+        name:
+          type: ["string", "null"]
+      required:
+        - lat
+        - lng
+        - name
+
+    ScenicRoute:
+      type: object
+      properties:
+        encodedPolyline:
+          type: string
+          description: Google Maps encoded polyline string
+        distanceKm:
+          type: number
+        durationMinutes:
+          type: number
+        waypoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/RouteWaypoint"
+        summary:
+          type: string
+          description: Human-readable route summary
+        mapUrl:
+          type: string
+          description: Static Google Maps URL showing the route
+      required:
+        - encodedPolyline
+        - distanceKm
+        - durationMinutes
+        - waypoints
+        - summary
+        - mapUrl
+
+    MerchantProduct:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        price:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
+        checkoutUrl:
+          type: string
+      required:
+        - id
+        - title
+        - price
+        - imageUrl
+        - checkoutUrl
+
+    Merchant:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          description: winery, bakery, artisan, cafe, etc.
+        lat:
+          type: number
+        lng:
+          type: number
+        address:
+          type: string
+        rating:
+          type: ["number", "null"]
+        distanceFromRouteKm:
+          type: ["number", "null"]
+        photoUrl:
+          type: ["string", "null"]
+        description:
+          type: string
+        isOpen:
+          type: ["boolean", "null"]
+      required:
+        - id
+        - name
+        - type
+        - lat
+        - lng
+        - address
+        - rating
+        - distanceFromRouteKm
+        - photoUrl
+        - description
+        - isOpen
+
+    MerchantCardRequest:
+      type: object
+      properties:
+        merchantId:
+          type: string
+        merchantName:
+          type: string
+        merchantType:
+          type: string
+      required:
+        - merchantId
+        - merchantName
+        - merchantType
+
+    MerchantCard:
+      type: object
+      properties:
+        merchant:
+          $ref: "#/components/schemas/Merchant"
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantProduct"
+        checkoutUrl:
+          type: string
+          description: One-tap Shopify checkout URL
+        hapticDistance:
+          type: number
+          description: Distance in km at which a wearable alert should trigger
+      required:
+        - merchant
+        - products
+        - checkoutUrl
+        - hapticDistance
+
+    McpTool:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: object
+          description: JSON Schema for the tool's input parameters
+      required:
+        - name
+        - description
+        - inputSchema
