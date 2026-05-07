@@ -31,6 +31,7 @@ interface MapViewProps {
   selectedMerchantId: string | null;
   onPinClick: (id: string) => void;
   isLoading: boolean;
+  routeRequested?: boolean;
 }
 
 declare global {
@@ -40,16 +41,11 @@ declare global {
   }
 }
 
-// NOTL Old Town walking loop waypoints
-const NIAGARA_ROUTE_WAYPOINTS = [
-  { lat: 43.2553, lng: -79.0712 }, // Market Square
-  { lat: 43.258, lng: -79.066 },   // toward Fort George
-  { lat: 43.2617, lng: -79.058 },  // Fort George
-  { lat: 43.2627, lng: -79.066 },  // Simcoe Park waterfront
-  { lat: 43.2585, lng: -79.073 },  // heading back
-  { lat: 43.2554, lng: -79.0733 }, // Shaw Festival
-  { lat: 43.2547, lng: -79.0712 }, // Queen Street
-  { lat: 43.2553, lng: -79.0712 }, // Market Square (loop back)
+// Fallback waypoints (used only if route has no encoded polyline + geometry library unavailable)
+const FALLBACK_WAYPOINTS = [
+  { lat: 43.2553, lng: -79.0712 },
+  { lat: 43.2617, lng: -79.058 },
+  { lat: 43.2553, lng: -79.0712 },
 ];
 
 function getMerchantTypeIcon(type: string) {
@@ -90,16 +86,23 @@ function SvgMapPlaceholder({
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Map real lat/lng to SVG coords — zoomed into NOTL Old Town
+  // Use route waypoints if available, otherwise the minimal fallback
+  const sourceWaypoints = (route?.waypoints?.length ? route.waypoints : FALLBACK_WAYPOINTS);
+
+  // Map real lat/lng to SVG coords dynamically based on the actual waypoints
+  const lats = sourceWaypoints.map((w) => w.lat);
+  const lngs = sourceWaypoints.map((w) => w.lng);
+  const pad = 0.005;
+  const minLat = Math.min(...lats) - pad, maxLat = Math.max(...lats) + pad;
+  const minLng = Math.min(...lngs) - pad, maxLng = Math.max(...lngs) + pad;
+
   const mapToSVG = (lat: number, lng: number) => {
-    const minLat = 43.248, maxLat = 43.268;
-    const minLng = -79.082, maxLng = -79.052;
-    const x = ((lng - minLng) / (maxLng - minLng)) * 760 + 20;
-    const y = ((maxLat - lat) / (maxLat - minLat)) * 460 + 20;
+    const x = ((lng - minLng) / (maxLng - minLng || 1)) * 760 + 20;
+    const y = ((maxLat - lat) / (maxLat - minLat || 1)) * 460 + 20;
     return { x, y };
   };
 
-  const routePoints = NIAGARA_ROUTE_WAYPOINTS.map((wp) => mapToSVG(wp.lat, wp.lng));
+  const routePoints = sourceWaypoints.map((wp) => mapToSVG(wp.lat, wp.lng));
   const pathD = routePoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
 
   // Car position along path
@@ -234,7 +237,7 @@ function SvgMapPlaceholder({
           <span style={{ opacity: 0.35 }}>·</span>
           <span>{route.durationMinutes}min</span>
           <span style={{ opacity: 0.35 }}>·</span>
-          <span style={{ color: "#34d399", fontWeight: 600 }}>NOTL loop</span>
+          <span style={{ color: "#34d399", fontWeight: 600 }}>{route.summary || "Scenic route"}</span>
         </div>
       )}
     </div>
@@ -264,9 +267,10 @@ function GoogleMapComponent({
 
   useEffect(() => {
     if (!mapRef.current || !window.google) return;
+    // Default: Canada overview — zoom in once a route loads
     const map = new window.google.maps.Map(mapRef.current, {
-      center: { lat: 43.2575, lng: -79.0665 },
-      zoom: 15,
+      center: { lat: 56.1304, lng: -106.3468 },
+      zoom: 4,
       mapTypeId: "roadmap",
       disableDefaultUI: false,
     });
@@ -276,14 +280,16 @@ function GoogleMapComponent({
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google || !route) return;
     if (polylineRef.current) polylineRef.current.setMap(null);
-    // Fall back to known waypoints if geometry library isn't available
+
     const path: google.maps.LatLngLiteral[] =
       window.google.maps.geometry?.encoding
         ? window.google.maps.geometry.encoding.decodePath(route.encodedPolyline).map((p) => ({
             lat: p.lat(),
             lng: p.lng(),
           }))
-        : NIAGARA_ROUTE_WAYPOINTS.map((wp) => ({ lat: wp.lat, lng: wp.lng }));
+        : (route.waypoints.length > 0
+            ? route.waypoints.map((wp) => ({ lat: wp.lat, lng: wp.lng }))
+            : FALLBACK_WAYPOINTS.map((wp) => ({ lat: wp.lat, lng: wp.lng })));
 
     polylineRef.current = new window.google.maps.Polyline({
       path,
@@ -293,6 +299,13 @@ function GoogleMapComponent({
       strokeWeight: 5,
       map: mapInstanceRef.current,
     });
+
+    // Fit the map to the route bounds
+    if (path.length > 0) {
+      const bounds = new window.google.maps.LatLngBounds();
+      path.forEach((p) => bounds.extend(p));
+      mapInstanceRef.current.fitBounds(bounds, { top: 48, bottom: 24, left: 16, right: 16 });
+    }
   }, [route]);
 
   useEffect(() => {
@@ -344,7 +357,7 @@ function GoogleMapComponent({
           <span style={{ opacity: 0.35 }}>·</span>
           <span>{route.durationMinutes}min</span>
           <span style={{ opacity: 0.35 }}>·</span>
-          <span style={{ color: "#34d399", fontWeight: 600 }}>NOTL loop</span>
+          <span style={{ color: "#34d399", fontWeight: 600 }}>{route.summary || "Scenic route"}</span>
         </div>
       )}
     </div>

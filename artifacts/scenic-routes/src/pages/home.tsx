@@ -10,37 +10,6 @@ import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
 import { Wifi, Battery, Signal, MapPin } from "lucide-react";
 
-const ROUTE_ORIGIN = "Market Square, Niagara-on-the-Lake, ON";
-const ROUTE_DEST = "Fort George National Historic Site, Niagara-on-the-Lake, ON";
-const ROUTE_MODE = "walking";
-const MERCHANT_LAT = 43.2553;
-const MERCHANT_LNG = -79.0712;
-
-const JOURNEY_WAYPOINTS = [
-  { lat: 43.2553, lng: -79.0712, progress: 0 },
-  { lat: 43.258, lng: -79.066, progress: 0.2 },
-  { lat: 43.2617, lng: -79.058, progress: 0.35 },
-  { lat: 43.2627, lng: -79.066, progress: 0.5 },
-  { lat: 43.2585, lng: -79.073, progress: 0.65 },
-  { lat: 43.2554, lng: -79.0733, progress: 0.8 },
-  { lat: 43.2547, lng: -79.0712, progress: 0.95 },
-  { lat: 43.2553, lng: -79.0712, progress: 1 },
-];
-
-function getPositionAtProgress(progress: number) {
-  if (progress <= 0) return JOURNEY_WAYPOINTS[0];
-  if (progress >= 1) return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
-  for (let i = 1; i < JOURNEY_WAYPOINTS.length; i++) {
-    const prev = JOURNEY_WAYPOINTS[i - 1];
-    const next = JOURNEY_WAYPOINTS[i];
-    if (progress <= next.progress) {
-      const t = (progress - prev.progress) / (next.progress - prev.progress);
-      return { lat: prev.lat + (next.lat - prev.lat) * t, lng: prev.lng + (next.lng - prev.lng) * t, progress };
-    }
-  }
-  return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
-}
-
 function useTime() {
   const [time, setTime] = useState(new Date());
   useEffect(() => {
@@ -59,14 +28,10 @@ function PhoneStatusBar({ side }: { side: "map" | "chat" }) {
       <span style={{ fontSize: 13, fontWeight: 600, color: side === "map" ? "#fff" : "#1a1a1a", fontFamily: "sans-serif", letterSpacing: -0.3 }}>
         {h}:{m}
       </span>
-      {/* Dynamic Island */}
-      <div style={{
-        width: 100, height: 28, borderRadius: 20,
-        background: "#000",
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-      }}>
-        {side === "map" && <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>MAPS</span>}
-        {side === "chat" && <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>CLAUDE</span>}
+      <div style={{ width: 100, height: 28, borderRadius: 20, background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>
+          {side === "map" ? "MAPS" : "CLAUDE"}
+        </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <Signal style={{ width: 12, height: 12, color: side === "map" ? "#fff" : "#1a1a1a" }} />
@@ -91,28 +56,43 @@ export default function Home() {
   const [journeyProgress, setJourneyProgress] = useState(0);
   const [watchAlert, setWatchAlert] = useState<{ name: string; type: string } | null>(null);
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
+
+  // Dynamic route — set from chat when user picks a location
+  const [routeParams, setRouteParams] = useState<{ origin: string; dest: string; mode: string } | null>(null);
+  const [merchantCenter, setMerchantCenter] = useState<{ lat: number; lng: number } | null>(null);
+
   const journeyRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: route, isLoading: routeLoading } = useGetScenicRoute({
-    origin: ROUTE_ORIGIN,
-    destination: ROUTE_DEST,
-    mode: ROUTE_MODE,
-  });
+  // Queries — only fire when route/location is known
+  const { data: route, isLoading: routeLoading } = useGetScenicRoute(
+    routeParams
+      ? { origin: routeParams.origin, destination: routeParams.dest, mode: routeParams.mode }
+      : { origin: "", destination: "", mode: "walking" },
+    { query: { enabled: !!routeParams } }
+  );
 
-  const { data: merchants, isLoading: merchantsLoading } = useGetMerchants({
-    lat: MERCHANT_LAT,
-    lng: MERCHANT_LNG,
-    radius: 800,
-    type: "all",
-  });
+  const { data: merchants, isLoading: merchantsLoading } = useGetMerchants(
+    merchantCenter
+      ? { lat: merchantCenter.lat, lng: merchantCenter.lng, radius: 800, type: "all" }
+      : { lat: 0, lng: 0, radius: 800, type: "all" },
+    { query: { enabled: !!merchantCenter } }
+  );
 
   const merchantCardMutation = useGetMerchantCard();
   const { data: mcpTools } = useGetMcpTools();
 
+  // When route loads, extract center from waypoints for merchant search
+  useEffect(() => {
+    if (route?.waypoints?.length) {
+      const mid = Math.floor(route.waypoints.length / 2);
+      setMerchantCenter({ lat: route.waypoints[mid].lat, lng: route.waypoints[mid].lng });
+    }
+  }, [route]);
+
   const handlePinClick = useCallback((merchantId: string) => {
     setSelectedMerchantId(merchantId);
-    const merchant = merchants?.find((m) => m.id === merchantId);
+    const merchant = (merchants ?? []).find((m) => m.id === merchantId);
     if (!merchant) return;
     merchantCardMutation.mutate({ data: { merchantId: merchant.id, merchantName: merchant.name, merchantType: merchant.type } });
   }, [merchants, merchantCardMutation]);
@@ -124,7 +104,7 @@ export default function Home() {
   }, []);
 
   const handleStartJourney = useCallback(() => {
-    if (journeyStarted || !mcpEnabled) return;
+    if (journeyStarted || !mcpEnabled || !route) return;
     setJourneyStarted(true);
     setJourneyProgress(0);
 
@@ -138,24 +118,43 @@ export default function Home() {
       setJourneyProgress(step / totalSteps);
 
       if (step === 20 && allMerchants[0]) handlePinClick(allMerchants[0].id);
-      if (step === 55 && allMerchants[3]) handlePinClick(allMerchants[3].id);
+      if (step === 55 && allMerchants[2]) handlePinClick(allMerchants[2].id);
       if (step === 80 && wineries[0]) {
         triggerWatchAlert({ name: wineries[0].name, type: "winery" });
         handlePinClick(wineries[0].id);
-      }
+      } else if (step === 80 && allMerchants[3]) handlePinClick(allMerchants[3].id);
       if (step === 110 && allMerchants[1]) handlePinClick(allMerchants[1].id);
-      if (step >= totalSteps) {
-        if (journeyRef.current) clearInterval(journeyRef.current);
-      }
+      if (step >= totalSteps && journeyRef.current) clearInterval(journeyRef.current);
     }, 110);
-  }, [journeyStarted, mcpEnabled, merchants, handlePinClick, triggerWatchAlert]);
+  }, [journeyStarted, mcpEnabled, route, merchants, handlePinClick, triggerWatchAlert]);
+
+  // Route request from chat
+  const handleRouteRequest = useCallback((origin: string, dest: string, mode: string) => {
+    setRouteParams({ origin, dest, mode });
+    setMerchantCenter(null);
+    setJourneyStarted(false);
+    setJourneyProgress(0);
+    setSelectedMerchantId(null);
+    if (journeyRef.current) clearInterval(journeyRef.current);
+  }, []);
 
   useEffect(() => () => {
     if (journeyRef.current) clearInterval(journeyRef.current);
     if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
   }, []);
 
-  const userPosition = journeyStarted ? getPositionAtProgress(journeyProgress) : undefined;
+  const userPosition = journeyStarted && route?.waypoints?.length
+    ? (() => {
+        const wps = route.waypoints;
+        const idx = Math.min(Math.floor(journeyProgress * (wps.length - 1)), wps.length - 2);
+        const t = (journeyProgress * (wps.length - 1)) - idx;
+        return {
+          lat: wps[idx].lat + (wps[idx + 1].lat - wps[idx].lat) * t,
+          lng: wps[idx].lng + (wps[idx + 1].lng - wps[idx].lng) * t,
+          progress: journeyProgress,
+        };
+      })()
+    : undefined;
 
   const routeContext = route ? {
     summary: route.summary,
@@ -170,14 +169,10 @@ export default function Home() {
       className="h-screen w-full overflow-hidden flex flex-col select-none"
       style={{ background: "linear-gradient(135deg, #060810 0%, #0a0d18 50%, #07090f 100%)" }}
     >
-      {/* Top bar — branding only */}
+      {/* Top bar */}
       <div className="flex-none flex items-center justify-between px-8 py-3">
         <div className="flex items-center gap-2.5">
-          <div style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: "linear-gradient(135deg, #34d399, #059669)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #34d399, #059669)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <MapPin style={{ width: 14, height: 14, color: "#fff" }} />
           </div>
           <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", letterSpacing: 0.5, textTransform: "uppercase" }}>
@@ -202,30 +197,22 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Cinematic split — two phone environments */}
+      {/* Cinematic split */}
       <div className="flex-1 flex items-center justify-center px-6 pb-4 gap-0 min-h-0">
 
-        {/* LEFT — Map/Wearable world */}
+        {/* LEFT — Map/Wearable */}
         <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
-          {/* Context label */}
           <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
             Navigation & Discovery
           </div>
 
-          {/* Phone frame */}
           <div style={{
-            width: "min(300px, 42vw)",
-            height: "min(580px, 78vh)",
-            borderRadius: 44,
-            background: "#0f0f14",
+            width: "min(300px, 42vw)", height: "min(580px, 78vh)",
+            borderRadius: 44, background: "#0f0f14",
             border: "2px solid #1e2030",
             boxShadow: "0 0 0 1px #0a0a10, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            position: "relative",
+            display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
           }}>
-            {/* Side buttons */}
             <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
             <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
             <div style={{ position: "absolute", left: -4, top: "44%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
@@ -233,8 +220,7 @@ export default function Home() {
 
             <PhoneStatusBar side="map" />
 
-            {/* Map content */}
-            <div className="flex-1 relative overflow-hidden" style={{ borderRadius: "0 0 2px 2px" }}>
+            <div className="flex-1 relative overflow-hidden">
               <MapView
                 route={route ?? null}
                 merchants={merchants ?? []}
@@ -243,21 +229,21 @@ export default function Home() {
                 selectedMerchantId={selectedMerchantId}
                 onPinClick={handlePinClick}
                 isLoading={routeLoading || merchantsLoading}
+                routeRequested={!!routeParams}
               />
-              {/* MCP not enabled overlay */}
+
+              {/* Overlay when MCP not enabled */}
               {!mcpEnabled && (
                 <div style={{
                   position: "absolute", inset: 0,
-                  background: "rgba(6,8,16,0.55)",
-                  backdropFilter: "blur(2px)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexDirection: "column", gap: 8,
+                  background: "rgba(6,8,16,0.6)", backdropFilter: "blur(2px)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8,
                 }}>
                   <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <MapPin style={{ width: 18, height: 18, color: "#34d399" }} />
                   </div>
                   <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", maxWidth: 140, lineHeight: 1.5 }}>
-                    Enable Explore Route MCP to activate navigation
+                    Enable Explore Route MCP in the chat to activate navigation
                   </p>
                 </div>
               )}
@@ -266,7 +252,6 @@ export default function Home() {
             <PhoneHomeIndicator color="#fff" />
           </div>
 
-          {/* Apple Watch below phone */}
           <div style={{ transform: "scale(0.82)", transformOrigin: "top center", marginTop: -4 }}>
             <AppleWatch alert={watchAlert} progress={journeyProgress} />
           </div>
@@ -275,50 +260,31 @@ export default function Home() {
         {/* CENTER DIVIDER */}
         <div style={{ width: 1, alignSelf: "stretch", margin: "20px 0", background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.06) 30%, rgba(255,255,255,0.06) 70%, transparent)" }} />
         <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 0, overflow: "visible", zIndex: 10 }}>
-          <div style={{
-            background: "#0d1020",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 20,
-            padding: "6px 14px",
-            whiteSpace: "nowrap",
-          }}>
+          <div style={{ background: "#0d1020", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "6px 14px", whiteSpace: "nowrap" }}>
             <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(255,255,255,0.3)", fontWeight: 600 }}>Live</span>
           </div>
           {mcpEnabled && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} style={{
-                  width: 3, height: 3, borderRadius: "50%",
-                  background: "#34d399",
-                  opacity: 0.6 - i * 0.12,
-                  animation: `pulse 1.5s ${i * 0.2}s ease-in-out infinite`,
-                }} />
+                <div key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: "#34d399", opacity: 0.6 - i * 0.12, animation: `pulse 1.5s ${i * 0.2}s ease-in-out infinite` }} />
               ))}
             </div>
           )}
         </div>
 
-        {/* RIGHT — Claude agent world */}
+        {/* RIGHT — Claude agent */}
         <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
-          {/* Context label */}
           <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
             Agentic Commerce
           </div>
 
-          {/* Phone frame */}
           <div style={{
-            width: "min(300px, 42vw)",
-            height: "min(580px, 78vh)",
-            borderRadius: 44,
-            background: "#f5f5f7",
+            width: "min(300px, 42vw)", height: "min(580px, 78vh)",
+            borderRadius: 44, background: "#f5f5f7",
             border: "2px solid #e0e0e5",
             boxShadow: "0 0 0 1px #ccc, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.9)",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            position: "relative",
+            display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
           }}>
-            {/* Side buttons (light phone) */}
             <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
             <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
             <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#d0d0d8", borderRadius: "0 4px 4px 0", border: "1px solid #bbb" }} />
@@ -333,6 +299,7 @@ export default function Home() {
                 journeyStarted={journeyStarted}
                 mcpEnabled={mcpEnabled}
                 onMcpEnable={() => setMcpEnabled(true)}
+                onRouteRequest={handleRouteRequest}
                 onStartJourney={handleStartJourney}
                 userPosition={userPosition}
                 onMerchantFocus={handlePinClick}
@@ -342,7 +309,6 @@ export default function Home() {
             <PhoneHomeIndicator color="#000" />
           </div>
 
-          {/* Platform logos row */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.35 }}>
             {["Shopify", "Claude", "Maps"].map((name) => (
               <span key={name} style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{name}</span>

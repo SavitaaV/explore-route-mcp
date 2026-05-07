@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -21,11 +21,9 @@ interface RouteContext {
   waypoints?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
-type MessageRole = "user" | "assistant" | "system";
-
 interface ChatMessage {
   id: string;
-  role: MessageRole;
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
   streaming?: boolean;
@@ -34,6 +32,7 @@ interface ChatMessage {
   merchantCard?: Merchant;
   mcpActivated?: boolean;
   journeyCard?: boolean;
+  locationCard?: boolean;
 }
 
 interface AiChatProps {
@@ -43,12 +42,22 @@ interface AiChatProps {
   journeyStarted: boolean;
   mcpEnabled: boolean;
   onMcpEnable: () => void;
+  onRouteRequest: (origin: string, dest: string, mode: string) => void;
   onStartJourney: () => void;
   userPosition?: { lat: number; lng: number; progress?: number };
   onMerchantFocus?: (merchantId: string) => void;
 }
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+
+const QUICK_CITIES = [
+  { label: "🍷 Niagara-on-the-Lake", value: "Niagara-on-the-Lake, ON" },
+  { label: "🏔️ Banff, AB", value: "Banff, AB" },
+  { label: "🏛️ Old Quebec City", value: "Old Quebec City, QC" },
+  { label: "🌲 Whistler, BC", value: "Whistler, BC" },
+  { label: "🌊 Victoria, BC", value: "Victoria, BC" },
+  { label: "🍁 Ottawa, ON", value: "Ottawa, ON" },
+];
 
 function getMerchantEmoji(type: string) {
   switch (type) {
@@ -78,24 +87,14 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
     <div
       onClick={() => onFocus?.(merchant.id)}
       style={{
-        background: "#fff",
-        borderRadius: 16,
-        overflow: "hidden",
-        border: "1px solid #e5e7eb",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-        cursor: "pointer",
-        transition: "box-shadow 0.2s",
-        marginTop: 8,
-        maxWidth: 240,
+        background: "#fff", borderRadius: 16, overflow: "hidden",
+        border: "1px solid #e5e7eb", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        cursor: "pointer", marginTop: 8, maxWidth: 240,
       }}
     >
       {merchant.photoUrl && (
-        <img
-          src={merchant.photoUrl}
-          alt={merchant.name}
-          style={{ width: "100%", height: 90, objectFit: "cover", display: "block" }}
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
+        <img src={merchant.photoUrl} alt={merchant.name} style={{ width: "100%", height: 90, objectFit: "cover", display: "block" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
       )}
       <div style={{ padding: "10px 12px 12px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
@@ -116,30 +115,11 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
           {merchant.description.length > 80 ? merchant.description.slice(0, 78) + "…" : merchant.description}
         </p>
         <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-          <button
-            onClick={(e) => { e.stopPropagation(); onFocus?.(merchant.id); }}
-            style={{
-              flex: 1, padding: "6px 0", borderRadius: 10,
-              background: "linear-gradient(135deg, #059669, #34d399)",
-              color: "#fff", fontSize: 11, fontWeight: 700,
-              border: "none", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            }}
-          >
-            <ShoppingBag style={{ width: 10, height: 10 }} />
-            Shop
+          <button onClick={(e) => { e.stopPropagation(); onFocus?.(merchant.id); }} style={{ flex: 1, padding: "6px 0", borderRadius: 10, background: "linear-gradient(135deg, #059669, #34d399)", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <ShoppingBag style={{ width: 10, height: 10 }} /> Shop
           </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onFocus?.(merchant.id); }}
-            style={{
-              flex: 1, padding: "6px 0", borderRadius: 10,
-              background: "#f3f4f6", color: "#374151",
-              fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-            }}
-          >
-            <MapPin style={{ width: 10, height: 10 }} />
-            Map
+          <button onClick={(e) => { e.stopPropagation(); onFocus?.(merchant.id); }} style={{ flex: 1, padding: "6px 0", borderRadius: 10, background: "#f3f4f6", color: "#374151", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+            <MapPin style={{ width: 10, height: 10 }} /> Map
           </button>
         </div>
       </div>
@@ -149,13 +129,7 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
 
 function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismiss: () => void }) {
   return (
-    <div style={{
-      background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
-      border: "1px solid #bbf7d0",
-      borderRadius: 16,
-      padding: "14px 16px",
-      marginTop: 8,
-    }}>
+    <div style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #bbf7d0", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Zap style={{ width: 16, height: 16, color: "#fff" }} />
@@ -166,32 +140,18 @@ function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismi
         </div>
       </div>
       <p style={{ fontSize: 11, color: "#065f46", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Allow Claude to access your route context and surface nearby merchant recommendations via MCP?
+        Allow Claude to access your route context and surface nearby independent merchant recommendations across Canada via MCP?
       </p>
       <div style={{ fontSize: 10, color: "#047857", marginBottom: 12, lineHeight: 1.6 }}>
         ✓ Only Shopify-verified merchants<br />
-        ✓ Turn off recommendations any time<br />
-        ✓ No data sold to advertisers
+        ✓ Works in any Canadian town or city<br />
+        ✓ Turn off recommendations any time
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button
-          onClick={onEnable}
-          style={{
-            flex: 1, padding: "9px 0", borderRadius: 12,
-            background: "linear-gradient(135deg, #059669, #34d399)",
-            color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
-          }}
-        >
+        <button onClick={onEnable} style={{ flex: 1, padding: "9px 0", borderRadius: 12, background: "linear-gradient(135deg, #059669, #34d399)", color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
           Enable Explore Route
         </button>
-        <button
-          onClick={onDismiss}
-          style={{
-            padding: "9px 14px", borderRadius: 12,
-            background: "transparent", color: "#6b7280",
-            fontSize: 12, border: "1px solid #d1d5db", cursor: "pointer",
-          }}
-        >
+        <button onClick={onDismiss} style={{ padding: "9px 14px", borderRadius: 12, background: "transparent", color: "#6b7280", fontSize: 12, border: "1px solid #d1d5db", cursor: "pointer" }}>
           Not now
         </button>
       </div>
@@ -201,120 +161,157 @@ function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismi
 
 function McpActivatedCard({ routeContext }: { routeContext: RouteContext | null }) {
   return (
-    <div style={{
-      background: "linear-gradient(135deg, #0f172a, #1e293b)",
-      border: "1px solid rgba(52,211,153,0.25)",
-      borderRadius: 16,
-      padding: "14px 16px",
-      marginTop: 8,
-    }}>
+    <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", border: "1px solid rgba(52,211,153,0.25)", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 8px #34d399" }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#34d399", letterSpacing: 0.5, textTransform: "uppercase" }}>
-          Explore Route MCP · Active
-        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#34d399", letterSpacing: 0.5, textTransform: "uppercase" }}>Explore Route MCP · Active</span>
       </div>
       <div style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.8 }}>
-        <div>▸ <span style={{ color: "#34d399" }}>get_scenic_route</span>( mode: "walking" )</div>
+        <div>▸ <span style={{ color: "#34d399" }}>get_scenic_route</span>( mode: "{routeContext?.mode ?? "walking"}" )</div>
         <div>▸ <span style={{ color: "#34d399" }}>get_nearby_merchants</span>( radius: 800m )</div>
-        <div style={{ marginTop: 6, color: "rgba(255,255,255,0.4)" }}>
-          Route: {routeContext?.distanceKm ?? 3.2}km · {routeContext?.durationMinutes ?? 38}min · 8 merchants indexed
-        </div>
+        {routeContext && (
+          <div style={{ marginTop: 6, color: "rgba(255,255,255,0.4)" }}>
+            Route: {routeContext.distanceKm}km · {routeContext.durationMinutes}min · merchants indexed
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function JourneyStartCard({ onStart }: { onStart: () => void }) {
+function LocationCard({ onSubmit }: { onSubmit: (location: string, mode: string) => void }) {
+  const [location, setLocation] = useState("");
+  const [mode, setMode] = useState("walking");
+
+  const handleSubmit = () => {
+    const loc = location.trim();
+    if (!loc) return;
+    onSubmit(loc, mode);
+  };
+
   return (
-    <div style={{
-      background: "linear-gradient(135deg, #fefce8, #fef9c3)",
-      border: "1px solid #fde68a",
-      borderRadius: 16,
-      padding: "14px 16px",
-      marginTop: 8,
-    }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "0 0 4px" }}>🗺️ Ready to walk?</p>
-      <p style={{ fontSize: 11, color: "#78350f", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Market Square → Fort George → Waterfront → Shaw Festival → Queen St
-        <br />
-        <span style={{ fontWeight: 600 }}>~3.2 km · ~38 min</span>
-      </p>
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+        <Navigation style={{ width: 14, height: 14, color: "#6366f1" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>Where in Canada?</span>
+      </div>
+
+      {/* Quick city chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+        {QUICK_CITIES.map((c) => (
+          <button
+            key={c.value}
+            onClick={() => onSubmit(c.value, mode)}
+            style={{
+              padding: "4px 8px", borderRadius: 20, fontSize: 10, fontWeight: 500,
+              background: "#f3f4f6", color: "#374151",
+              border: "1px solid #e5e7eb", cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom location input */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+          placeholder="Enter any Canadian city or town…"
+          style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1px solid #d1d5db", fontSize: 11, color: "#111827", outline: "none", background: "#f9fafb" }}
+        />
+      </div>
+
+      {/* Mode toggle */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[{ value: "walking", label: "🚶 Walk" }, { value: "bicycling", label: "🚴 Cycle" }, { value: "driving", label: "🚗 Drive" }].map((m) => (
+          <button
+            key={m.value}
+            onClick={() => setMode(m.value)}
+            style={{
+              flex: 1, padding: "5px 0", borderRadius: 8, fontSize: 10, fontWeight: 600,
+              background: mode === m.value ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#f3f4f6",
+              color: mode === m.value ? "#fff" : "#6b7280",
+              border: "none", cursor: "pointer",
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       <button
-        onClick={onStart}
+        onClick={handleSubmit}
+        disabled={!location.trim()}
         style={{
-          width: "100%", padding: "10px 0", borderRadius: 12,
-          background: "linear-gradient(135deg, #d97706, #f59e0b)",
-          color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+          width: "100%", padding: "9px 0", borderRadius: 12,
+          background: location.trim() ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb",
+          color: location.trim() ? "#fff" : "#9ca3af",
+          fontSize: 12, fontWeight: 700, border: "none", cursor: location.trim() ? "pointer" : "default",
         }}
       >
-        Begin Walk →
+        Plan my route →
       </button>
     </div>
   );
 }
 
-function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onStart, routeContext }: {
-  msg: ChatMessage;
-  merchants: Merchant[];
+function JourneyStartCard({ routeContext, onStart }: { routeContext: RouteContext | null; onStart: () => void }) {
+  return (
+    <div style={{ background: "linear-gradient(135deg, #fefce8, #fef9c3)", border: "1px solid #fde68a", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "0 0 4px" }}>🗺️ Route mapped — ready to walk?</p>
+      {routeContext && (
+        <p style={{ fontSize: 11, color: "#78350f", margin: "0 0 4px", lineHeight: 1.5 }}>
+          {routeContext.summary}
+        </p>
+      )}
+      <p style={{ fontSize: 11, color: "#92400e", margin: "0 0 12px", fontWeight: 600 }}>
+        {routeContext?.distanceKm}km · {routeContext?.durationMinutes} min {routeContext?.mode ?? "walk"}
+      </p>
+      <button onClick={onStart} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "linear-gradient(135deg, #d97706, #f59e0b)", color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
+        Begin {routeContext?.mode === "bicycling" ? "Ride" : "Walk"} →
+      </button>
+    </div>
+  );
+}
+
+function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocationSubmit, onStart, routeContext }: {
+  msg: ChatMessage; merchants: Merchant[];
   onFocus?: (id: string) => void;
-  onEnable?: () => void;
-  onDismiss?: () => void;
-  onStart?: () => void;
-  routeContext: RouteContext | null;
+  onEnable?: () => void; onDismiss?: () => void;
+  onLocationSubmit?: (loc: string, mode: string) => void;
+  onStart?: () => void; routeContext: RouteContext | null;
 }) {
   const isUser = msg.role === "user";
-
   return (
     <div style={{ display: "flex", gap: 8, flexDirection: isUser ? "row-reverse" : "row", marginBottom: 12 }}>
       {!isUser && (
-        <div style={{
-          width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 13, marginTop: 2,
-        }}>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, marginTop: 2 }}>
           ✦
         </div>
       )}
-
       <div style={{ maxWidth: "82%", display: "flex", flexDirection: "column", alignItems: isUser ? "flex-end" : "flex-start" }}>
         {msg.content && (
           <div style={{
             padding: "10px 14px",
             borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-            background: isUser
-              ? "linear-gradient(135deg, #6366f1, #8b5cf6)"
-              : "#fff",
-            color: isUser ? "#fff" : "#111827",
-            fontSize: 13,
-            lineHeight: 1.55,
+            background: isUser ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#fff",
+            color: isUser ? "#fff" : "#111827", fontSize: 13, lineHeight: 1.55,
             boxShadow: isUser ? "0 2px 8px rgba(99,102,241,0.25)" : "0 1px 4px rgba(0,0,0,0.08)",
-            border: isUser ? "none" : "1px solid #f0f0f0",
-            whiteSpace: "pre-wrap",
+            border: isUser ? "none" : "1px solid #f0f0f0", whiteSpace: "pre-wrap",
           }}>
             {msg.content}
-            {msg.streaming && (
-              <span style={{ display: "inline-block", width: 2, height: 14, background: "currentColor", marginLeft: 2, animation: "pulse 1s infinite", verticalAlign: "text-bottom" }} />
-            )}
+            {msg.streaming && <span style={{ display: "inline-block", width: 2, height: 14, background: "currentColor", marginLeft: 2, animation: "pulse 1s infinite", verticalAlign: "text-bottom" }} />}
           </div>
         )}
-
-        {msg.permissionCard && onEnable && onDismiss && (
-          <PermissionCard onEnable={onEnable} onDismiss={onDismiss} />
-        )}
-
-        {msg.mcpActivated && (
-          <McpActivatedCard routeContext={routeContext} />
-        )}
-
-        {msg.journeyCard && onStart && (
-          <JourneyStartCard onStart={onStart} />
-        )}
-
-        {msg.merchantCard && (
-          <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />
-        )}
+        {msg.permissionCard && onEnable && onDismiss && <PermissionCard onEnable={onEnable} onDismiss={onDismiss} />}
+        {msg.mcpActivated && <McpActivatedCard routeContext={routeContext} />}
+        {msg.locationCard && onLocationSubmit && <LocationCard onSubmit={onLocationSubmit} />}
+        {msg.journeyCard && onStart && routeContext && <JourneyStartCard routeContext={routeContext} onStart={onStart} />}
+        {msg.merchantCard && <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />}
       </div>
     </div>
   );
@@ -324,13 +321,13 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "u0",
     role: "user",
-    content: "Hey! I'm in Niagara-on-the-Lake today and want to explore Old Town on foot. Any plan?",
+    content: "Hey! I want to explore somewhere scenic in Canada today — maybe a walk? Any suggestions?",
     timestamp: new Date(Date.now() - 90000),
   },
   {
     id: "a0",
     role: "assistant",
-    content: "Great choice — NOTL Old Town is stunning for a walk, especially along Queen Street and out to Fort George.\n\nI can do more than give you a generic route though. I have access to Explore Route MCP — a tool that:\n\n• Maps a scenic walking loop tailored to Old Town\n• Surfaces nearby independent merchants as you walk (local jam makers, artisan cafés, wineries, boutiques)\n• Syncs your route to Google Maps on your phone or watch\n• Only pings you for genuinely worthwhile stops — not a flood of ads\n\nYou can turn off recommendations any time during the walk. Want to enable it?",
+    content: "Great idea! Canada has incredible places to explore on foot — from Old Quebec City's cobblestone ramparts to Banff's Bow River Trail, Victoria's harbour walk, Whistler Village, or the back streets of Niagara-on-the-Lake Old Town.\n\nI can do more than suggest though. I have access to Explore Route MCP — it maps a scenic route wherever you want to go and surfaces nearby independent merchants as you walk: local artisans, cafés, boutiques, wineries. Shopify-verified only. I'll keep it quiet — a nudge when something's genuinely worth it, not a feed of ads.\n\nYou can turn recommendations off any time. Want me to enable it?",
     timestamp: new Date(Date.now() - 85000),
     skipSources: true,
   },
@@ -344,204 +341,133 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
-function buildSystemPrompt(routeContext: RouteContext | null, merchants: Merchant[]) {
-  const merchantInfo = merchants.length > 0
-    ? merchants.slice(0, 8).map((m, i) =>
-        `${i + 1}. ${m.name} [${m.type}]${m.rating ? ` ⭐${m.rating}` : ""}${m.walkMinutes != null ? ` (${m.walkMinutes} min walk)` : ""} — ${m.description}`
-      ).join("\n")
-    : "Greaves Jams, Balzac's Coffee, Treadwell Farm-to-Table, Shaw Festival Shop, Oliv Tasting Room (all on Queen St)";
-
-  return `You are Claude, an AI travel and commerce guide embedded in the Explore Route MCP app — a Shopify-ecosystem tool that surfaces independent merchants to explorers in Niagara-on-the-Lake Old Town.
-
-Active route: ${routeContext?.summary ?? "NOTL Old Town Walking Loop"} — ${routeContext?.distanceKm ?? 3.2}km, ${routeContext?.durationMinutes ?? 38}min walk.
-
-Nearby merchants indexed via MCP:
-${merchantInfo}
-
-Your persona:
-- Knowledgeable, warm, specific — you know NOTL well
-- Reference merchants by name; explain WHY they're worth stopping at
-- Not salesy — you surface things that genuinely fit the moment
-- Concise: 1-3 short paragraphs max, or a crisp list
-- It's early May — strawberry season starting, Shaw Festival just opened
-- If asked about a purchase, mention Shopify one-tap checkout is available`;
-}
-
 export function AiChat({
-  merchants,
-  routeContext,
-  journeyProgress,
-  journeyStarted,
-  mcpEnabled,
-  onMcpEnable,
-  onStartJourney,
-  userPosition,
-  onMerchantFocus,
+  merchants, routeContext, journeyProgress, journeyStarted,
+  mcpEnabled, onMcpEnable, onRouteRequest, onStartJourney,
+  userPosition, onMerchantFocus,
 }: AiChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [permissionDismissed, setPermissionDismissed] = useState(false);
   const [milestonesFired, setMilestonesFired] = useState<Set<string>>(new Set());
+  const [pendingLocation, setPendingLocation] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
+  const prevRouteRef = useRef<RouteContext | null>(null);
 
   useEffect(() => {
-    // Only auto-scroll when new messages arrive after initial load
     if (messages.length > messageCountRef.current) {
       messageCountRef.current = messages.length;
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
-  // When MCP gets enabled — inject confirmation messages
+  // MCP just enabled → inject confirmation + location picker
   useEffect(() => {
     if (!mcpEnabled) return;
     setMessages((prev) => {
       if (prev.some((m) => m.mcpActivated)) return prev;
       return [
         ...prev,
-        {
-          id: "u1",
-          role: "user",
-          content: "Yes, enable it!",
-          timestamp: new Date(),
-          skipSources: true,
-        },
-        {
-          id: "a1",
-          role: "assistant",
-          content: "Done — Explore Route MCP is live.",
-          timestamp: new Date(),
-          mcpActivated: true,
-          skipSources: true,
-        },
-        {
-          id: "a2",
-          role: "assistant",
-          content: "I've mapped your walking loop and pinged it to your Google Maps. Starting point: Market Square.\n\nI'll surface a few highlights as you walk — not too often, just the ones worth it. You can ask me to pause recommendations any time by saying \"quiet mode\". Ready when you are 👟",
-          timestamp: new Date(),
-          skipSources: true,
-          journeyCard: true,
-        },
+        { id: "u1", role: "user", content: "Yes, enable it!", timestamp: new Date(), skipSources: true },
+        { id: "a1", role: "assistant", content: "Done — Explore Route MCP is live.\n\nNow tell me where you'd like to explore. Pick a destination below or type any Canadian city or town.", timestamp: new Date(), mcpActivated: true, skipSources: true },
+        { id: "loc0", role: "assistant", content: "", timestamp: new Date(), locationCard: true, skipSources: true },
       ];
     });
   }, [mcpEnabled]);
 
-  // Journey milestone message injection
+  // Route context arrived (after user picked location) → inject route confirmation
   useEffect(() => {
-    if (!journeyStarted || !mcpEnabled) return;
+    if (!routeContext || prevRouteRef.current === routeContext) return;
+    prevRouteRef.current = routeContext;
 
-    const injectMilestone = (key: string, messages: ChatMessage[]) => {
+    // Don't add if route card already there
+    setMessages((prev) => {
+      if (prev.some((m) => m.journeyCard)) return prev;
+      const msgs: ChatMessage[] = [];
+      if (pendingLocation) {
+        msgs.push({ id: "u-loc", role: "user", content: `Explore ${pendingLocation}`, timestamp: new Date(), skipSources: true });
+      }
+      msgs.push({
+        id: "a-route",
+        role: "assistant",
+        content: `Mapped it. Here's your ${routeContext.mode ?? "walking"} route in ${routeContext.summary?.split(" ").slice(-2).join(" ") ?? "this area"} — ${routeContext.distanceKm}km, about ${routeContext.durationMinutes} minutes. I've indexed nearby merchants along the way. I'll surface the best ones as you go — not too often. Ready when you are.`,
+        timestamp: new Date(),
+        journeyCard: true,
+        skipSources: true,
+      });
+      return [...prev, ...msgs];
+    });
+  }, [routeContext, pendingLocation]);
+
+  // Journey milestone merchant cards
+  useEffect(() => {
+    if (!journeyStarted || !mcpEnabled || merchants.length === 0) return;
+
+    const inject = (key: string, newMsgs: ChatMessage[]) => {
       setMilestonesFired((prev) => { const s = new Set(prev); s.add(key); return s; });
-      setMessages((prev) => [...prev, ...messages]);
+      setMessages((prev) => [...prev, ...newMsgs]);
     };
 
-    if (journeyProgress >= 0.12 && !milestonesFired.has("m1")) {
-      const m = merchants.find((x) => x.id === "greaves-jams") ?? merchants[0];
-      if (m) {
-        setTimeout(() => injectMilestone("m1", [
-          {
-            id: "m1a",
-            role: "assistant",
-            content: "You're 2 minutes into Queen Street — one stop worth making right now:",
-            timestamp: new Date(),
-            skipSources: true,
-          },
-          {
-            id: "m1b",
-            role: "assistant",
-            content: "",
-            timestamp: new Date(),
-            merchantCard: m,
-            skipSources: true,
-          },
-        ]), 400);
-      }
+    if (journeyProgress >= 0.12 && !milestonesFired.has("m1") && merchants[0]) {
+      const t = Date.now();
+      setTimeout(() => inject("m1", [
+        { id: `m1a-${t}`, role: "assistant", content: "You're just getting started — one right on your path:", timestamp: new Date(), skipSources: true },
+        { id: `m1b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[0], skipSources: true },
+      ]), 400);
     }
-
-    if (journeyProgress >= 0.38 && !milestonesFired.has("m2")) {
-      const m = merchants.find((x) => x.id === "shaw-festival-shop") ?? merchants[3];
-      if (m) {
-        setTimeout(() => injectMilestone("m2", [
-          {
-            id: "m2a",
-            role: "assistant",
-            content: "Heading toward Fort George — worth noting: the Shaw Festival Gift Shop is just ahead on your right. Limited-edition theatre prints that aren't tourist-trap stuff. Might be your thing if you like that aesthetic.",
-            timestamp: new Date(),
-            skipSources: true,
-          },
-          {
-            id: "m2b",
-            role: "assistant",
-            content: "",
-            timestamp: new Date(),
-            merchantCard: m,
-            skipSources: true,
-          },
-        ]), 500);
-      }
+    if (journeyProgress >= 0.38 && !milestonesFired.has("m2") && merchants[2]) {
+      const t = Date.now();
+      setTimeout(() => inject("m2", [
+        { id: `m2a-${t}`, role: "assistant", content: "Coming up ahead — worth a quick stop:", timestamp: new Date(), skipSources: true },
+        { id: `m2b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[2], skipSources: true },
+      ]), 400);
     }
-
-    if (journeyProgress >= 0.62 && !milestonesFired.has("m3")) {
-      const m = merchants.find((x) => x.id === "balzacs-coffee") ?? merchants[1];
-      if (m) {
-        setTimeout(() => injectMilestone("m3", [
-          {
-            id: "m3a",
-            role: "assistant",
-            content: "You're past the waterfront — good spot for a mid-walk coffee if you want one:",
-            timestamp: new Date(),
-            skipSources: true,
-          },
-          {
-            id: "m3b",
-            role: "assistant",
-            content: "",
-            timestamp: new Date(),
-            merchantCard: m,
-            skipSources: true,
-          },
-        ]), 300);
-      }
+    if (journeyProgress >= 0.62 && !milestonesFired.has("m3") && merchants[1]) {
+      const t = Date.now();
+      setTimeout(() => inject("m3", [
+        { id: `m3a-${t}`, role: "assistant", content: "Good moment for a break if you want one:", timestamp: new Date(), skipSources: true },
+        { id: `m3b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[1], skipSources: true },
+      ]), 300);
     }
-
-    if (journeyProgress >= 0.85 && !milestonesFired.has("m4")) {
-      const m = merchants.find((x) => x.id === "oliv-tasting-room") ?? merchants[4];
-      if (m) {
-        setTimeout(() => injectMilestone("m4", [
-          {
-            id: "m4a",
-            role: "assistant",
-            content: "Almost done — one last stop on your way back to Market Square. Unusual one:",
-            timestamp: new Date(),
-            skipSources: true,
-          },
-          {
-            id: "m4b",
-            role: "assistant",
-            content: "",
-            timestamp: new Date(),
-            merchantCard: m,
-            skipSources: true,
-          },
-        ]), 400);
-      }
+    if (journeyProgress >= 0.85 && !milestonesFired.has("m4") && merchants[3]) {
+      const t = Date.now();
+      setTimeout(() => inject("m4", [
+        { id: `m4a-${t}`, role: "assistant", content: "Almost done — one last stop on the way back:", timestamp: new Date(), skipSources: true },
+        { id: `m4b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[3], skipSources: true },
+      ]), 400);
     }
-
-    if (journeyProgress >= 1 && !milestonesFired.has("m5")) {
-      setTimeout(() => injectMilestone("m5", [
-        {
-          id: "m5a",
-          role: "assistant",
-          content: "Loop complete! 🎉 Back at Market Square.\n\nYou covered 3.2km through NOTL Old Town. Hope the stops were worthwhile — Explore Route MCP will be here whenever you want to explore again.",
-          timestamp: new Date(),
-          skipSources: true,
-        },
+    if (journeyProgress >= 1 && !milestonesFired.has("done")) {
+      const t = Date.now();
+      setTimeout(() => inject("done", [
+        { id: `done1-${t}`, role: "assistant", content: "Loop complete! 🎉 Hope the walk was worthwhile.\n\nWant to explore another spot? Just say where and I'll map a new route.", timestamp: new Date(), skipSources: true },
       ]), 800);
     }
   }, [journeyProgress, journeyStarted, mcpEnabled, merchants, milestonesFired]);
+
+  const handleLocationSubmit = useCallback((location: string, mode: string) => {
+    setPendingLocation(location);
+    // Hide the location card
+    setMessages((prev) => prev.map((m) => m.locationCard ? { ...m, locationCard: false } : m));
+    // Show loading message
+    setMessages((prev) => [...prev, {
+      id: "a-loading",
+      role: "assistant",
+      content: `Mapping your ${mode} route in ${location}…`,
+      timestamp: new Date(),
+      skipSources: true,
+    }]);
+    onRouteRequest(location, location, mode);
+  }, [onRouteRequest]);
+
+  const handleEnable = useCallback(() => { onMcpEnable(); }, [onMcpEnable]);
+  const handleDismiss = useCallback(() => {
+    setMessages((prev) => [
+      ...prev.filter((m) => !m.permissionCard),
+      { id: "dismiss1", role: "assistant", content: "No worries — you can enable Explore Route any time by asking me.", timestamp: new Date(), skipSources: true },
+    ]);
+  }, []);
 
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
@@ -570,7 +496,6 @@ export function AiChat({
       });
 
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -582,75 +507,38 @@ export function AiChat({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6)) as { text?: string };
-              if (data.text) {
-                fullText += data.text;
-                setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: fullText } : m));
-              }
+              if (data.text) { fullText += data.text; setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: fullText } : m)); }
             } catch { /* ignore */ }
           }
         }
       }
-
       setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, streaming: false, skipSources: false } : m));
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: "Sorry, couldn't reach Claude. Please try again.", streaming: false } : m));
+        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: "Sorry, couldn't reach Claude. Try again.", streaming: false } : m));
       }
     } finally {
       setIsStreaming(false);
     }
   }, [input, isStreaming, merchants, routeContext, userPosition]);
 
-  const handleEnable = useCallback(() => {
-    onMcpEnable();
-  }, [onMcpEnable]);
-
-  const handleDismiss = useCallback(() => {
-    setPermissionDismissed(true);
-    setMessages((prev) => prev.map((m) => m.permissionCard ? { ...m, permissionCard: false, content: "" } : m));
-    setMessages((prev) => [...prev, {
-      id: "dismiss1",
-      role: "assistant",
-      content: "No problem — you can enable it any time by asking me to \"start Explore Route\".",
-      timestamp: new Date(),
-      skipSources: true,
-    }]);
-  }, []);
-
-  const suggestedPrompts = mcpEnabled ? [
-    "Best bakery on Queen Street?",
-    "Any wineries walking distance?",
-    "Quiet mode — stop recommendations",
-  ] : [
-    "What's unique about Greaves Jams?",
-    "Tell me about the Shaw Festival",
-  ];
+  const hasRoute = !!routeContext;
+  const suggestedPrompts = hasRoute
+    ? ["What's worth stopping at here?", "Any good coffee nearby?", "Quiet mode — pause recommendations"]
+    : ["Tell me about Banff on foot", "Best walks in Quebec City?"];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#f5f5f7" }}>
-      {/* App header bar */}
-      <div style={{
-        padding: "8px 16px 10px",
-        borderBottom: "1px solid #e5e7eb",
-        background: "#fff",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        flexShrink: 0,
-      }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
-          ✦
-        </div>
+      {/* Header */}
+      <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
         <div>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827" }}>Claude</p>
-          <p style={{ margin: 0, fontSize: 10, color: "#6b7280" }}>
-            {mcpEnabled ? "Explore Route MCP · Active" : "Explore Route MCP · Standby"}
-          </p>
+          <p style={{ margin: 0, fontSize: 10, color: "#6b7280" }}>{mcpEnabled ? "Explore Route MCP · Canada-wide" : "Explore Route MCP · Standby"}</p>
         </div>
         {mcpEnabled && (
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
@@ -664,32 +552,19 @@ export function AiChat({
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px 8px" }}>
         {messages.map((msg) => (
           <MessageBubble
-            key={msg.id}
-            msg={msg}
-            merchants={merchants}
-            onFocus={onMerchantFocus}
-            onEnable={handleEnable}
-            onDismiss={handleDismiss}
-            onStart={onStartJourney}
-            routeContext={routeContext}
+            key={msg.id} msg={msg} merchants={merchants}
+            onFocus={onMerchantFocus} onEnable={handleEnable} onDismiss={handleDismiss}
+            onLocationSubmit={handleLocationSubmit} onStart={onStartJourney} routeContext={routeContext}
           />
         ))}
         <div ref={bottomRef} />
       </div>
 
       {/* Suggested prompts */}
-      {!isStreaming && messages.length < 6 && (
+      {!isStreaming && (
         <div style={{ padding: "4px 14px 8px", display: "flex", flexWrap: "wrap", gap: 6 }}>
           {suggestedPrompts.map((p) => (
-            <button
-              key={p}
-              onClick={() => sendMessage(p)}
-              style={{
-                padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500,
-                background: "#fff", color: "#374151",
-                border: "1px solid #e5e7eb", cursor: "pointer",
-              }}
-            >
+            <button key={p} onClick={() => sendMessage(p)} style={{ padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: "#fff", color: "#374151", border: "1px solid #e5e7eb", cursor: "pointer" }}>
               {p}
             </button>
           ))}
@@ -698,36 +573,15 @@ export function AiChat({
 
       {/* Input */}
       <div style={{ padding: "8px 12px 10px", borderTop: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          background: "#f3f4f6", borderRadius: 24,
-          padding: "8px 12px 8px 16px",
-          border: "1px solid transparent",
-          transition: "border-color 0.2s",
-        }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f3f4f6", borderRadius: 24, padding: "8px 12px 8px 16px" }}>
           <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder={mcpEnabled ? "Ask about stops, food, shopping…" : "Ask Claude anything…"}
+            placeholder={mcpEnabled ? (hasRoute ? "Ask about stops, food, shopping…" : "Or just ask me anything…") : "Ask Claude anything…"}
             disabled={isStreaming}
-            style={{
-              flex: 1, border: "none", background: "transparent",
-              fontSize: 13, color: "#111827", outline: "none",
-            }}
+            style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#111827", outline: "none" }}
           />
-          <button
-            onClick={() => sendMessage()}
-            disabled={!input.trim() || isStreaming}
-            style={{
-              width: 30, height: 30, borderRadius: "50%",
-              background: input.trim() && !isStreaming ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb",
-              border: "none", cursor: input.trim() ? "pointer" : "default",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.2s",
-              flexShrink: 0,
-            }}
-          >
+          <button onClick={() => sendMessage()} disabled={!input.trim() || isStreaming} style={{ width: 30, height: 30, borderRadius: "50%", background: input.trim() && !isStreaming ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb", border: "none", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.2s", flexShrink: 0 }}>
             <Send style={{ width: 13, height: 13, color: input.trim() && !isStreaming ? "#fff" : "#9ca3af" }} />
           </button>
         </div>
