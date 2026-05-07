@@ -8,8 +8,7 @@ import {
 import { MapView } from "@/components/MapView";
 import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
-import { McpToolsPanel } from "@/components/McpToolsPanel";
-import { MapPin, Zap, ChevronDown, ChevronUp, PersonStanding } from "lucide-react";
+import { Wifi, Battery, Signal, MapPin } from "lucide-react";
 
 const ROUTE_ORIGIN = "Market Square, Niagara-on-the-Lake, ON";
 const ROUTE_DEST = "Fort George National Historic Site, Niagara-on-the-Lake, ON";
@@ -17,19 +16,18 @@ const ROUTE_MODE = "walking";
 const MERCHANT_LAT = 43.2553;
 const MERCHANT_LNG = -79.0712;
 
-// Positions along the NOTL walking loop for the journey animation
 const JOURNEY_WAYPOINTS = [
-  { lat: 43.2553, lng: -79.0712, progress: 0 },    // Market Square start
-  { lat: 43.258, lng: -79.066, progress: 0.2 },    // heading toward Fort George
-  { lat: 43.2617, lng: -79.058, progress: 0.35 },  // Fort George
-  { lat: 43.2627, lng: -79.066, progress: 0.5 },   // Simcoe Park waterfront
-  { lat: 43.2585, lng: -79.073, progress: 0.65 },  // heading back to Queen St
-  { lat: 43.2554, lng: -79.0733, progress: 0.8 },  // Shaw Festival
-  { lat: 43.2547, lng: -79.0712, progress: 0.95 }, // Queen Street
-  { lat: 43.2553, lng: -79.0712, progress: 1 },    // Market Square end
+  { lat: 43.2553, lng: -79.0712, progress: 0 },
+  { lat: 43.258, lng: -79.066, progress: 0.2 },
+  { lat: 43.2617, lng: -79.058, progress: 0.35 },
+  { lat: 43.2627, lng: -79.066, progress: 0.5 },
+  { lat: 43.2585, lng: -79.073, progress: 0.65 },
+  { lat: 43.2554, lng: -79.0733, progress: 0.8 },
+  { lat: 43.2547, lng: -79.0712, progress: 0.95 },
+  { lat: 43.2553, lng: -79.0712, progress: 1 },
 ];
 
-function getPositionAtProgress(progress: number): { lat: number; lng: number } {
+function getPositionAtProgress(progress: number) {
   if (progress <= 0) return JOURNEY_WAYPOINTS[0];
   if (progress >= 1) return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
   for (let i = 1; i < JOURNEY_WAYPOINTS.length; i++) {
@@ -37,21 +35,62 @@ function getPositionAtProgress(progress: number): { lat: number; lng: number } {
     const next = JOURNEY_WAYPOINTS[i];
     if (progress <= next.progress) {
       const t = (progress - prev.progress) / (next.progress - prev.progress);
-      return {
-        lat: prev.lat + (next.lat - prev.lat) * t,
-        lng: prev.lng + (next.lng - prev.lng) * t,
-      };
+      return { lat: prev.lat + (next.lat - prev.lat) * t, lng: prev.lng + (next.lng - prev.lng) * t, progress };
     }
   }
   return JOURNEY_WAYPOINTS[JOURNEY_WAYPOINTS.length - 1];
 }
 
+function useTime() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return time;
+}
+
+function PhoneStatusBar({ side }: { side: "map" | "chat" }) {
+  const time = useTime();
+  const h = time.getHours().toString().padStart(2, "0");
+  const m = time.getMinutes().toString().padStart(2, "0");
+  return (
+    <div className="flex items-center justify-between px-5 pt-3 pb-1 flex-none select-none" style={{ zIndex: 10 }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: side === "map" ? "#fff" : "#1a1a1a", fontFamily: "sans-serif", letterSpacing: -0.3 }}>
+        {h}:{m}
+      </span>
+      {/* Dynamic Island */}
+      <div style={{
+        width: 100, height: 28, borderRadius: 20,
+        background: "#000",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+      }}>
+        {side === "map" && <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>MAPS</span>}
+        {side === "chat" && <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)", letterSpacing: 0.5 }}>CLAUDE</span>}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <Signal style={{ width: 12, height: 12, color: side === "map" ? "#fff" : "#1a1a1a" }} />
+        <Wifi style={{ width: 12, height: 12, color: side === "map" ? "#fff" : "#1a1a1a" }} />
+        <Battery style={{ width: 14, height: 14, color: side === "map" ? "#fff" : "#1a1a1a" }} />
+      </div>
+    </div>
+  );
+}
+
+function PhoneHomeIndicator({ color = "#000" }: { color?: string }) {
+  return (
+    <div className="flex justify-center pb-2 pt-1 flex-none">
+      <div style={{ width: 120, height: 4, borderRadius: 2, background: color, opacity: 0.2 }} />
+    </div>
+  );
+}
+
 export default function Home() {
-  const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
+  const [mcpEnabled, setMcpEnabled] = useState(false);
   const [journeyStarted, setJourneyStarted] = useState(false);
   const [journeyProgress, setJourneyProgress] = useState(0);
   const [watchAlert, setWatchAlert] = useState<{ name: string; type: string } | null>(null);
-  const [showMcpTools, setShowMcpTools] = useState(false);
+  const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
   const journeyRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,22 +110,12 @@ export default function Home() {
   const merchantCardMutation = useGetMerchantCard();
   const { data: mcpTools } = useGetMcpTools();
 
-  const handlePinClick = useCallback(
-    (merchantId: string) => {
-      setSelectedMerchantId(merchantId);
-      const merchant = merchants?.find((m) => m.id === merchantId);
-      if (!merchant) return;
-
-      merchantCardMutation.mutate({
-        data: {
-          merchantId: merchant.id,
-          merchantName: merchant.name,
-          merchantType: merchant.type,
-        },
-      });
-    },
-    [merchants, merchantCardMutation]
-  );
+  const handlePinClick = useCallback((merchantId: string) => {
+    setSelectedMerchantId(merchantId);
+    const merchant = merchants?.find((m) => m.id === merchantId);
+    if (!merchant) return;
+    merchantCardMutation.mutate({ data: { merchantId: merchant.id, merchantName: merchant.name, merchantType: merchant.type } });
+  }, [merchants, merchantCardMutation]);
 
   const triggerWatchAlert = useCallback((merchant: { name: string; type: string }) => {
     setWatchAlert(merchant);
@@ -94,181 +123,231 @@ export default function Home() {
     alertTimeoutRef.current = setTimeout(() => setWatchAlert(null), 5000);
   }, []);
 
-  const startJourney = useCallback(() => {
-    if (journeyStarted) return;
+  const handleStartJourney = useCallback(() => {
+    if (journeyStarted || !mcpEnabled) return;
     setJourneyStarted(true);
     setJourneyProgress(0);
 
     const allMerchants = merchants ?? [];
     const wineries = allMerchants.filter((m) => m.type === "winery");
     let step = 0;
-    const totalSteps = 120;
+    const totalSteps = 140;
 
     journeyRef.current = setInterval(() => {
       step++;
-      const progress = step / totalSteps;
-      setJourneyProgress(progress);
+      setJourneyProgress(step / totalSteps);
 
-      if (step === 15 && allMerchants[0]) {
-        handlePinClick(allMerchants[0].id);
-      }
-      if (step === 42 && allMerchants[2]) {
-        handlePinClick(allMerchants[2].id);
-      }
-      if (step === 60 && wineries[0]) {
+      if (step === 20 && allMerchants[0]) handlePinClick(allMerchants[0].id);
+      if (step === 55 && allMerchants[3]) handlePinClick(allMerchants[3].id);
+      if (step === 80 && wineries[0]) {
         triggerWatchAlert({ name: wineries[0].name, type: "winery" });
         handlePinClick(wineries[0].id);
       }
-      if (step === 85 && allMerchants[4]) {
-        handlePinClick(allMerchants[4].id);
-      }
+      if (step === 110 && allMerchants[1]) handlePinClick(allMerchants[1].id);
       if (step >= totalSteps) {
         if (journeyRef.current) clearInterval(journeyRef.current);
       }
-    }, 120);
-  }, [journeyStarted, merchants, handlePinClick, triggerWatchAlert]);
+    }, 110);
+  }, [journeyStarted, mcpEnabled, merchants, handlePinClick, triggerWatchAlert]);
 
-  useEffect(() => {
-    return () => {
-      if (journeyRef.current) clearInterval(journeyRef.current);
-      if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
-    };
+  useEffect(() => () => {
+    if (journeyRef.current) clearInterval(journeyRef.current);
+    if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
   }, []);
 
   const userPosition = journeyStarted ? getPositionAtProgress(journeyProgress) : undefined;
 
-  const merchantCardData =
-    selectedMerchantId && merchantCardMutation.data?.merchant?.id === selectedMerchantId
-      ? merchantCardMutation.data
-      : null;
-
-  const routeContext = route
-    ? {
-        summary: route.summary,
-        distanceKm: route.distanceKm,
-        durationMinutes: route.durationMinutes,
-        mode: route.mode,
-        waypoints: route.waypoints,
-      }
-    : null;
+  const routeContext = route ? {
+    summary: route.summary,
+    distanceKm: route.distanceKm,
+    durationMinutes: route.durationMinutes,
+    mode: route.mode,
+    waypoints: route.waypoints,
+  } : null;
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <header className="flex-none flex items-center justify-between px-5 py-3 border-b border-border bg-card/80 backdrop-blur-sm z-10">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
-            <MapPin className="w-4 h-4 text-primary-foreground" />
+    <div
+      className="h-screen w-full overflow-hidden flex flex-col select-none"
+      style={{ background: "linear-gradient(135deg, #060810 0%, #0a0d18 50%, #07090f 100%)" }}
+    >
+      {/* Top bar — branding only */}
+      <div className="flex-none flex items-center justify-between px-8 py-3">
+        <div className="flex items-center gap-2.5">
+          <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            background: "linear-gradient(135deg, #34d399, #059669)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <MapPin style={{ width: 14, height: 14, color: "#fff" }} />
           </div>
-          <div>
-            <h1 className="text-sm font-semibold text-foreground tracking-tight">Scenic Routes MCP</h1>
-            <div className="flex items-center gap-1.5">
-              <PersonStanding className="w-3 h-3 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">NOTL Old Town Walking Loop · {route?.distanceKm ?? 3.2}km</p>
-            </div>
-          </div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", letterSpacing: 0.5, textTransform: "uppercase" }}>
+            Explore Route MCP
+          </span>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowMcpTools((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <Zap className="w-3 h-3" />
-            MCP Tools
-            {showMcpTools ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
-          {!journeyStarted ? (
-            <button
-              onClick={startJourney}
-              disabled={routeLoading || merchantsLoading}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              <PersonStanding className="w-3.5 h-3.5" />
-              Start Walk
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              {journeyProgress < 1 ? `${Math.round(journeyProgress * 100)}% of loop` : "Loop complete!"}
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: 1, textTransform: "uppercase" }}>
+          Shopify × Google Maps × Claude
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {mcpEnabled && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399" }} className="animate-pulse" />
+              <span style={{ fontSize: 10, color: "#34d399", fontWeight: 600, letterSpacing: 0.5 }}>MCP ACTIVE</span>
+            </div>
+          )}
+          {mcpTools && (
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)" }}>
+              {mcpTools.length} tools
             </div>
           )}
         </div>
-      </header>
+      </div>
 
-      {/* MCP Tools Dropdown */}
-      {showMcpTools && mcpTools && (
-        <div className="flex-none border-b border-border bg-card/95 backdrop-blur-sm z-10">
-          <McpToolsPanel tools={mcpTools} />
-        </div>
-      )}
+      {/* Cinematic split — two phone environments */}
+      <div className="flex-1 flex items-center justify-center px-6 pb-4 gap-0 min-h-0">
 
-      {/* Main split-screen layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left — Map */}
-        <div className="flex-1 relative overflow-hidden">
-          <MapView
-            route={route ?? null}
-            merchants={merchants ?? []}
-            journeyProgress={journeyProgress}
-            journeyStarted={journeyStarted}
-            selectedMerchantId={selectedMerchantId}
-            onPinClick={handlePinClick}
-            isLoading={routeLoading || merchantsLoading}
-          />
+        {/* LEFT — Map/Wearable world */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
+          {/* Context label */}
+          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
+            Navigation & Discovery
+          </div>
 
-          {/* Merchant card overlay when selected */}
-          {merchantCardData && (
-            <div className="absolute bottom-24 left-4 right-4 z-20 bg-card/95 backdrop-blur-sm border border-border rounded-2xl p-4 shadow-xl animate-fade-up">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="font-semibold text-sm text-foreground">{merchantCardData.merchant.name}</p>
-                  <p className="text-[11px] text-muted-foreground">{merchantCardData.merchant.address}</p>
+          {/* Phone frame */}
+          <div style={{
+            width: "min(300px, 42vw)",
+            height: "min(580px, 78vh)",
+            borderRadius: 44,
+            background: "#0f0f14",
+            border: "2px solid #1e2030",
+            boxShadow: "0 0 0 1px #0a0a10, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            position: "relative",
+          }}>
+            {/* Side buttons */}
+            <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+            <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+            <div style={{ position: "absolute", left: -4, top: "44%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+            <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#1a1a24", borderRadius: "0 4px 4px 0", border: "1px solid #2a2a38" }} />
+
+            <PhoneStatusBar side="map" />
+
+            {/* Map content */}
+            <div className="flex-1 relative overflow-hidden" style={{ borderRadius: "0 0 2px 2px" }}>
+              <MapView
+                route={route ?? null}
+                merchants={merchants ?? []}
+                journeyProgress={journeyProgress}
+                journeyStarted={journeyStarted}
+                selectedMerchantId={selectedMerchantId}
+                onPinClick={handlePinClick}
+                isLoading={routeLoading || merchantsLoading}
+              />
+              {/* MCP not enabled overlay */}
+              {!mcpEnabled && (
+                <div style={{
+                  position: "absolute", inset: 0,
+                  background: "rgba(6,8,16,0.55)",
+                  backdropFilter: "blur(2px)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  flexDirection: "column", gap: 8,
+                }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <MapPin style={{ width: 18, height: 18, color: "#34d399" }} />
+                  </div>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", maxWidth: 140, lineHeight: 1.5 }}>
+                    Enable Explore Route MCP to activate navigation
+                  </p>
                 </div>
-                <button
-                  onClick={() => setSelectedMerchantId(null)}
-                  className="text-muted-foreground hover:text-foreground text-lg leading-none -mt-0.5"
-                >×</button>
-              </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {merchantCardData.products.slice(0, 2).map((p) => (
-                  <a
-                    key={p.id}
-                    href={p.checkoutUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-none flex items-center gap-2 bg-primary/10 border border-primary/25 rounded-xl px-3 py-2 hover:bg-primary/20 transition-colors group"
-                  >
-                    {p.imageUrl && (
-                      <img src={p.imageUrl} alt={p.title} className="w-10 h-10 rounded-lg object-cover" />
-                    )}
-                    <div>
-                      <p className="text-[11px] font-medium text-foreground line-clamp-1 max-w-[120px]">{p.title}</p>
-                      <p className="text-[11px] text-primary font-semibold">{p.price}</p>
-                    </div>
-                    <span className="text-[10px] text-primary group-hover:underline ml-1 shrink-0">Buy →</span>
-                  </a>
-                ))}
-              </div>
+              )}
             </div>
-          )}
 
-          {/* Apple Watch overlay — bottom-left of map */}
-          <div className="absolute bottom-6 left-6 z-20">
+            <PhoneHomeIndicator color="#fff" />
+          </div>
+
+          {/* Apple Watch below phone */}
+          <div style={{ transform: "scale(0.82)", transformOrigin: "top center", marginTop: -4 }}>
             <AppleWatch alert={watchAlert} progress={journeyProgress} />
           </div>
         </div>
 
-        {/* Right — AI Chat */}
-        <div className="w-80 xl:w-96 flex-none border-l border-border flex flex-col bg-card/50 backdrop-blur-sm">
-          <AiChat
-            merchants={merchants ?? []}
-            routeContext={routeContext}
-            journeyStarted={journeyStarted}
-            userPosition={userPosition}
-            onMerchantFocus={handlePinClick}
-          />
+        {/* CENTER DIVIDER */}
+        <div style={{ width: 1, alignSelf: "stretch", margin: "20px 0", background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.06) 30%, rgba(255,255,255,0.06) 70%, transparent)" }} />
+        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 0, overflow: "visible", zIndex: 10 }}>
+          <div style={{
+            background: "#0d1020",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 20,
+            padding: "6px 14px",
+            whiteSpace: "nowrap",
+          }}>
+            <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(255,255,255,0.3)", fontWeight: 600 }}>Live</span>
+          </div>
+          {mcpEnabled && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} style={{
+                  width: 3, height: 3, borderRadius: "50%",
+                  background: "#34d399",
+                  opacity: 0.6 - i * 0.12,
+                  animation: `pulse 1.5s ${i * 0.2}s ease-in-out infinite`,
+                }} />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT — Claude agent world */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
+          {/* Context label */}
+          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
+            Agentic Commerce
+          </div>
+
+          {/* Phone frame */}
+          <div style={{
+            width: "min(300px, 42vw)",
+            height: "min(580px, 78vh)",
+            borderRadius: 44,
+            background: "#f5f5f7",
+            border: "2px solid #e0e0e5",
+            boxShadow: "0 0 0 1px #ccc, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.9)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            position: "relative",
+          }}>
+            {/* Side buttons (light phone) */}
+            <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
+            <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
+            <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#d0d0d8", borderRadius: "0 4px 4px 0", border: "1px solid #bbb" }} />
+
+            <PhoneStatusBar side="chat" />
+
+            <div className="flex-1 overflow-hidden" style={{ background: "#f5f5f7" }}>
+              <AiChat
+                merchants={merchants ?? []}
+                routeContext={routeContext}
+                journeyProgress={journeyProgress}
+                journeyStarted={journeyStarted}
+                mcpEnabled={mcpEnabled}
+                onMcpEnable={() => setMcpEnabled(true)}
+                onStartJourney={handleStartJourney}
+                userPosition={userPosition}
+                onMerchantFocus={handlePinClick}
+              />
+            </div>
+
+            <PhoneHomeIndicator color="#000" />
+          </div>
+
+          {/* Platform logos row */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.35 }}>
+            {["Shopify", "Claude", "Maps"].map((name) => (
+              <span key={name} style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{name}</span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

@@ -227,14 +227,14 @@ function SvgMapPlaceholder({
         })}
       </svg>
 
-      {/* Route info card */}
+      {/* Route info card — compact for phone frame */}
       {route && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full flex items-center gap-3 border border-white/10">
-          <span className="font-semibold">{route.distanceKm}km</span>
-          <span className="text-white/40">•</span>
-          <span>{route.durationMinutes} min walk</span>
-          <span className="text-white/40">•</span>
-          <span className="text-green-400">NOTL Old Town loop</span>
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md text-white rounded-full border border-white/10 whitespace-nowrap" style={{ fontSize: 10, padding: "4px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>{route.distanceKm}km</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span>{route.durationMinutes}min</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span style={{ color: "#34d399", fontWeight: 600 }}>NOTL loop</span>
         </div>
       )}
     </div>
@@ -339,12 +339,12 @@ function GoogleMapComponent({
     <div className="relative w-full h-full">
       <div ref={mapRef} className="w-full h-full" />
       {route && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full flex items-center gap-3 border border-white/10 z-10 pointer-events-none">
-          <span className="font-semibold">{route.distanceKm}km</span>
-          <span className="text-white/40">•</span>
-          <span>{route.durationMinutes} min walk</span>
-          <span className="text-white/40">•</span>
-          <span className="text-green-400">NOTL Old Town loop</span>
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md text-white rounded-full border border-white/10 z-10 pointer-events-none whitespace-nowrap" style={{ fontSize: 10, padding: "4px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontWeight: 700 }}>{route.distanceKm}km</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span>{route.durationMinutes}min</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span style={{ color: "#34d399", fontWeight: 600 }}>NOTL loop</span>
         </div>
       )}
     </div>

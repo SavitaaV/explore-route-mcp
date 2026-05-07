@@ -39,8 +39,8 @@ export function AppleWatch({ alert, progress }: AppleWatchProps) {
 
   const hours = time.getHours().toString().padStart(2, "0");
   const minutes = time.getMinutes().toString().padStart(2, "0");
-  const steps = Math.round(progress * 8430);
-  const kmDisplay = (progress * 130).toFixed(1);
+  const steps = Math.round(progress * 4200);
+  const kmDisplay = (progress * 3.2).toFixed(1);
 
   return (
     <div className="select-none" style={{ width: 140, filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.5))" }}>
