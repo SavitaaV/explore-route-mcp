@@ -183,6 +183,191 @@ const MOCK_MERCHANTS = [
   },
 ];
 
+// Ontario-wide local merchants — used in mock graph fallback to give province-level coverage
+const ONTARIO_MOCK_MERCHANTS = [
+  {
+    id: "soma-chocolate-toronto",
+    name: "Soma Chocolate Maker",
+    type: "artisan",
+    city: "Toronto",
+    lat: 43.6449, lng: -79.4022,
+    address: "443 King St W, Toronto, ON",
+    rating: 4.9, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1481391319762-47dff72954d9?w=400",
+    description: "Award-winning bean-to-bar chocolate maker in Toronto's Distillery District. Single-origin bars and seasonal confections.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Their 70% Madagascar has won four International Chocolate Awards.", inventoryConfidence: 88, recentVisitors: 7, hoursAgoConfirmed: 2,
+  },
+  {
+    id: "nadege-patisserie",
+    name: "Nadège Patisserie",
+    type: "bakery",
+    city: "Toronto",
+    lat: 43.6753, lng: -79.4099,
+    address: "780 Queen St W, Toronto, ON",
+    rating: 4.7, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1587668178277-295251f900ce?w=400",
+    description: "Parisian-style patisserie with inventive macarons and entremets made fresh daily.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Each macaron flavour is a two-week experiment. The salty caramel took eleven tries.", inventoryConfidence: 75, recentVisitors: 5, hoursAgoConfirmed: 1,
+  },
+  {
+    id: "holt-renfrew-toronto",
+    name: "Holt Renfrew",
+    type: "boutique",
+    city: "Toronto",
+    lat: 43.6692, lng: -79.3878,
+    address: "50 Bloor St W, Toronto, ON",
+    rating: 4.5, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=400",
+    description: "Iconic Canadian luxury department store with curated local designers and international labels.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Founded in 1837 — Canada's oldest luxury retailer. The fur vault below street level still holds a few heirlooms.", inventoryConfidence: 72, recentVisitors: 9, hoursAgoConfirmed: 3,
+  },
+  {
+    id: "ten-thousand-coffees",
+    name: "Pilot Coffee Roasters",
+    type: "cafe",
+    city: "Toronto",
+    lat: 43.6425, lng: -79.3965,
+    address: "49 Wagstaff Dr, Toronto, ON",
+    rating: 4.7, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400",
+    description: "Toronto's premier specialty coffee roaster. Wholesale, retail, and café all under one roof.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "They source directly from 12 farms across 3 continents. The Kenya Karogoto is in season right now.", inventoryConfidence: 83, recentVisitors: 6, hoursAgoConfirmed: 2,
+  },
+  {
+    id: "bookmarkd-toronto",
+    name: "Glad Day Bookshop",
+    type: "boutique",
+    city: "Toronto",
+    lat: 43.6626, lng: -79.3949,
+    address: "499 Church St, Toronto, ON",
+    rating: 4.8, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400",
+    description: "World's oldest LGBTQ+ bookshop and café, now with a curated Shopify store for rare and local titles.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Open since 1970. Every Wednesday the community table is packed for author readings.", inventoryConfidence: 68, recentVisitors: 4, hoursAgoConfirmed: 3,
+  },
+  {
+    id: "thyme-and-truffles",
+    name: "Thyme & Truffles Herb Shoppe",
+    type: "artisan",
+    city: "Ottawa",
+    lat: 45.4266, lng: -75.6906,
+    address: "717 Bank St, Ottawa, ON",
+    rating: 4.8, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=400",
+    description: "Family-run herb and spice shop in the Glebe. Over 200 culinary herbs, artisan salts, and spice blends.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Three generations of the Picard family have run this shop. Grandmère's ras el hanout is still the bestseller.", inventoryConfidence: 91, recentVisitors: 5, hoursAgoConfirmed: 1,
+  },
+  {
+    id: "bridgehead-ottawa",
+    name: "Bridgehead Coffee",
+    type: "cafe",
+    city: "Ottawa",
+    lat: 45.4231, lng: -75.6994,
+    address: "378 Dalhousie St, Ottawa, ON",
+    rating: 4.6, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400",
+    description: "Ottawa's beloved independent coffee chain — fair-trade, single-origin, and deeply local. All beans roasted in the city.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "Founded in 1983 as a poverty-relief project. Now a certified B Corp with 16 Ottawa cafés, every bean traceable.", inventoryConfidence: 79, recentVisitors: 8, hoursAgoConfirmed: 2,
+  },
+  {
+    id: "hintonburg-public-house",
+    name: "Mill Street Brewery",
+    type: "winery",
+    city: "Ottawa",
+    lat: 45.4298, lng: -75.6894,
+    address: "555 Wellington St W, Ottawa, ON",
+    rating: 4.5, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=400",
+    description: "Ottawa's craft brewery in a historic former railway workshop. Seasonal small-batch ales brewed on-site.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "The Head Brewer left a career in biochemistry to perfect the IPA. The seasonal pumpkin ale sells out province-wide every October.", inventoryConfidence: 86, recentVisitors: 7, hoursAgoConfirmed: 1,
+  },
+  {
+    id: "hamilton-farmer-market",
+    name: "Hamilton Farmers' Market",
+    type: "artisan",
+    city: "Hamilton",
+    lat: 43.2561, lng: -79.8686,
+    address: "35 York Blvd, Hamilton, ON",
+    rating: 4.7, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1488459716781-31db52582fe9?w=400",
+    description: "One of Ontario's oldest farmers' markets — local produce, cheeses, meats, and artisan crafts since 1837.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: false, story: "Over 50 vendors sell their goods under one roof every Tuesday, Thursday, and Saturday. The Mennonite bakers sell out by 10am.", inventoryConfidence: null, recentVisitors: 12, hoursAgoConfirmed: 1,
+  },
+  {
+    id: "tally-ho-ice-cream",
+    name: "Tally Ho Ice Cream",
+    type: "artisan",
+    city: "Stratford",
+    lat: 43.3706, lng: -80.9820,
+    address: "80 Ontario St, Stratford, ON",
+    rating: 4.8, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=400",
+    description: "Beloved soft-serve and handmade ice cream shop in the heart of Stratford. Local dairy, 24 rotating flavours.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: false, story: "The same family has been making the base recipe since 1957. The seasonal strawberry-rhubarb is Stratford's unofficial civic flavour.", inventoryConfidence: null, recentVisitors: 6, hoursAgoConfirmed: 2,
+  },
+  {
+    id: "elora-brewing",
+    name: "Elora Brewing Company",
+    type: "winery",
+    city: "Guelph",
+    lat: 43.6857, lng: -80.4274,
+    address: "45 Metcalfe St, Elora, ON",
+    rating: 4.8, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1535958636474-b021ee887b13?w=400",
+    description: "Award-winning craft brewery in a renovated 19th-century building beside the Elora Gorge. Farm-to-glass philosophy.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: true, story: "All their grains come from farms within 100km. The Elora Gorge Amber is named after the canyon it overlooks.", inventoryConfidence: 90, recentVisitors: 8, hoursAgoConfirmed: 1,
+  },
+  {
+    id: "kingston-public-market",
+    name: "Kingston Public Market",
+    type: "artisan",
+    city: "Kingston",
+    lat: 44.2333, lng: -76.4806,
+    address: "Springer Market Square, Kingston, ON",
+    rating: 4.6, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1488459716781-31db52582fe9?w=400",
+    description: "Historic open-air market in Kingston's downtown core. 200+ years of local artisans, farmers, and food vendors.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: false, story: "One of Canada's oldest continuously operating outdoor markets. The same family has sold cheese here for four generations.", inventoryConfidence: null, recentVisitors: 10, hoursAgoConfirmed: 2,
+  },
+  {
+    id: "sudbury-blueberry",
+    name: "Blueberry Fields Farm",
+    type: "artisan",
+    city: "Sudbury",
+    lat: 46.4833, lng: -80.9891,
+    address: "Rural Route 1, Greater Sudbury, ON",
+    rating: 4.7, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?w=400",
+    description: "Family-run blueberry farm and preserves shop. U-pick in season, artisan jams and wild berry honeys year-round.",
+    isOpen: true, walkMinutes: 0,
+    isOnShopify: false, story: "Northern Ontario blueberries grow smaller and sweeter because of the granite soil. The farm has been in the Pelletier family since 1962.", inventoryConfidence: null, recentVisitors: 3, hoursAgoConfirmed: 4,
+  },
+  // Ghost merchants — local businesses not yet on Shopify
+  {
+    id: "ghost-barrie-pottery",
+    name: "Barrie Pottery Collective",
+    type: "artisan",
+    city: "Barrie",
+    lat: 44.3893, lng: -79.6944,
+    address: "58 Dunlop St W, Barrie, ON",
+    rating: null, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=400",
+    description: "A ceramics and pottery collective with six local artists sharing studio space. No website yet.",
+    isOpen: null, walkMinutes: 0,
+    isOnShopify: false, story: null, inventoryConfidence: null, recentVisitors: 2, hoursAgoConfirmed: 6,
+  },
+  {
+    id: "ghost-kitchener-tailor",
+    name: "Main Street Bespoke Tailor",
+    type: "boutique",
+    city: "Kitchener",
+    lat: 43.4524, lng: -80.4941,
+    address: "12 King St W, Kitchener, ON",
+    rating: null, distanceFromRouteKm: 0, photoUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400",
+    description: "Bespoke tailoring shop with 30 years of local craftsmanship. Word-of-mouth only — no online presence.",
+    isOpen: null, walkMinutes: 0,
+    isOnShopify: false, story: null, inventoryConfidence: null, recentVisitors: 1, hoursAgoConfirmed: 8,
+  },
+];
+
 async function fetchScenicRoute(origin: string, destination: string, mode: string = "walking") {
   if (!GOOGLE_MAPS_API_KEY) {
     logger.info("No Google Maps API key — returning mock NOTL walking route");
@@ -569,26 +754,129 @@ function urgencyScore(node: { type: string; rating: number | null; openNow: bool
 
 // Ontario city centres for multi-city Places search
 const ONTARIO_CITIES = [
-  { name: "Toronto",  lat: 43.6532, lng: -79.3832, radius: 20_000 },
-  { name: "Ottawa",   lat: 45.4215, lng: -75.6972, radius: 20_000 },
-  { name: "Hamilton", lat: 43.2557, lng: -79.8711, radius: 15_000 },
-  { name: "London",   lat: 42.9849, lng: -81.2453, radius: 15_000 },
-  { name: "Niagara",  lat: 43.2553, lng: -79.0725, radius:  8_000 },
+  { name: "Toronto",          lat: 43.6532, lng: -79.3832, radius: 20_000 },
+  { name: "Ottawa",           lat: 45.4215, lng: -75.6972, radius: 20_000 },
+  { name: "Hamilton",         lat: 43.2557, lng: -79.8711, radius: 15_000 },
+  { name: "London",           lat: 42.9849, lng: -81.2453, radius: 15_000 },
+  { name: "Niagara",          lat: 43.2553, lng: -79.0725, radius:  8_000 },
+  { name: "Kitchener",        lat: 43.4516, lng: -80.4925, radius: 15_000 },
+  { name: "Kingston",         lat: 44.2312, lng: -76.4860, radius: 12_000 },
+  { name: "Barrie",           lat: 44.3894, lng: -79.6903, radius: 12_000 },
+  { name: "Windsor",          lat: 42.3149, lng: -83.0364, radius: 12_000 },
+  { name: "Sudbury",          lat: 46.4917, lng: -80.9930, radius: 12_000 },
+  { name: "Peterborough",     lat: 44.3091, lng: -78.3197, radius: 10_000 },
+  { name: "Guelph",           lat: 43.5448, lng: -80.2482, radius: 10_000 },
+  { name: "St. Catharines",   lat: 43.1594, lng: -79.2469, radius: 10_000 },
+  { name: "Stratford",        lat: 43.3703, lng: -80.9822, radius:  8_000 },
 ];
-const PLACES_SEARCH_TYPES = ["restaurant", "cafe", "bakery", "store"];
+const PLACES_SEARCH_TYPES = [
+  "restaurant", "cafe", "bakery", "store",
+  "gift_shop", "clothing_store", "food", "art_gallery",
+  "florist", "jewelry_store", "book_store",
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enterprise chain blocklist — names or name fragments that identify national /
+// multinational chains to exclude from the local commerce graph.
+// ─────────────────────────────────────────────────────────────────────────────
+const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
+  // Grocery / supermarket chains (Loblaw & subsidiaries)
+  "loblaws", "loblaw", "no frills", "nofrills", "real canadian superstore", "valu-mart", "fortinos",
+  "zehrs", "valumart", "superstore", "maxi ", "maxi store", "maxi supermarche", "provigo",
+  // Metro & subsidiaries
+  "metro supermarché", "metro grocery", "food basics", "super c",
+  // Other grocery
+  "walmart", "costco", "sobeys", "freshco", "iga grocery", "giant tiger", "farm boy",
+  "whole foods", "trader joe", "save-on-foods", "buy-low foods",
+  // Pharmacy chains
+  "shoppers drug mart", "rexall", "london drugs", "pharmasave", "guardian pharmacy",
+  // Fast food / QSR
+  "tim hortons", "mcdonald", "subway", "harvey's", "wendy's", "burger king",
+  "kfc", "pizza pizza", "pizza hut", "domino's", "a&w", "dairy queen",
+  "popeyes", "five guys", "chipotle", "taco bell", "dunkin",
+  // Coffee chains
+  "starbucks", "second cup", "coffee time", "country style",
+  // Alcohol retail
+  "lcbo", "the beer store", "beer store", "wine rack",
+  // Home improvement & hardware
+  "canadian tire", "home depot", "rona", "home hardware", "lowe's", "lowes",
+  "true value", "princess auto",
+  // Department / big-box
+  "winners", "homesense", "marshalls", "the bay", "hudson's bay", "bay",
+  "sears", "target", "dollarama", "dollar tree", "dollar general",
+  "value village", "goodwill",
+  // Gas / convenience
+  "petro-canada", "shell", "esso", "ultramar", "circle k", "couche-tard",
+  "mac's convenience", "7-eleven",
+  // Telecom retail
+  "bell", "rogers", "telus", "freedom mobile", "public mobile",
+  // Banks / financial
+  "td bank", "rbc", "bmo", "scotiabank", "cibc", "national bank",
+  "tangerine", "hsbc", "desjardins",
+  // Large apparel chains
+  "h&m", "zara", "gap", "old navy", "banana republic", "forever 21",
+  "uniqlo", "sport chek", "mark's", "reitmans", "thyme maternity",
+  "addition elle", "penningtons", "le château",
+  // Other large chains
+  "best buy", "the source", "future shop", "staples", "business depot",
+  "chapters", "indigo", "coles bookstore",
+  "aldo", "shoe company", "sport expert",
+];
+
+// Explicit allowlist — brands that would otherwise hit the blocklist but are
+// Shopify-verified and should remain visible.
+const ENTERPRISE_CHAIN_ALLOWLIST: string[] = ["ikea"];
+
+function isEnterpriseChain(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return false;
+  return ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b));
+}
+
+// Classify a merchant as local / regional / enterprise based on name only.
+// Deliberately avoids type-based heuristics to prevent false positives on local markets.
+function classifyChainTier(name: string, _types: string[]): "local" | "regional" | "enterprise" {
+  const lower = name.toLowerCase();
+  if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return "regional";
+  if (ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b))) return "enterprise";
+  return "local";
+}
 
 // Shopify Global Catalog queries scoped to Ontario product categories
 const ONTARIO_CATALOG_QUERIES: Array<{ q: string; category: string }> = [
-  { q: "wine",            category: "wine" },
-  { q: "artisan jam",     category: "artisan-food" },
-  { q: "maple syrup",     category: "artisan-food" },
-  { q: "honey",           category: "artisan-food" },
-  { q: "cheese",          category: "artisan-food" },
-  { q: "craft beer",      category: "beer" },
-  { q: "chocolate",       category: "chocolate" },
-  { q: "coffee roaster",  category: "coffee" },
-  { q: "artisan gift",    category: "gifts" },
-  { q: "loose leaf tea",  category: "tea" },
+  // Food & beverage — artisan
+  { q: "wine",                  category: "wine" },
+  { q: "artisan jam",           category: "artisan-food" },
+  { q: "maple syrup",           category: "artisan-food" },
+  { q: "honey",                 category: "artisan-food" },
+  { q: "cheese",                category: "artisan-food" },
+  { q: "craft beer",            category: "beer" },
+  { q: "chocolate",             category: "chocolate" },
+  { q: "coffee roaster",        category: "coffee" },
+  { q: "loose leaf tea",        category: "tea" },
+  { q: "hot sauce",             category: "artisan-food" },
+  { q: "canola oil",            category: "artisan-food" },
+  // Gifts & home
+  { q: "artisan gift",          category: "gifts" },
+  { q: "handmade candles",      category: "home" },
+  { q: "local pottery",         category: "home" },
+  { q: "beeswax",               category: "home" },
+  { q: "handmade soap",         category: "home" },
+  // Apparel & accessories
+  { q: "canadian clothing",     category: "apparel" },
+  { q: "handmade jewelry",      category: "jewelry" },
+  { q: "wool clothing",         category: "apparel" },
+  { q: "leather goods",         category: "accessories" },
+  // Wellness & beauty
+  { q: "natural skincare",      category: "beauty" },
+  { q: "aromatherapy",          category: "wellness" },
+  { q: "herbal wellness",       category: "wellness" },
+  // Art & books
+  { q: "local artist prints",   category: "art" },
+  { q: "independent bookstore", category: "books" },
+  // Outdoor & sporting
+  { q: "outdoor adventure gear", category: "outdoor" },
+  { q: "cycling accessories",   category: "outdoor" },
 ];
 
 // Map merchant type → catalog category for mock-graph enrichment
@@ -622,7 +910,7 @@ async function fetchOntarioCatalog(): Promise<{
 
   const results = await Promise.allSettled(
     ONTARIO_CATALOG_QUERIES.map(({ q, category }) =>
-      searchCatalog(q, { limit: 5, shipsTo: "CA", category }).then((products) => ({
+      searchCatalog(q, { limit: 20, shipsTo: "CA", category }).then((products) => ({
         category,
         products,
       }))
@@ -676,9 +964,10 @@ router.get("/places-graph", async (req, res) => {
     byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
   }));
 
-  // Fallback: build graph from MOCK_MERCHANTS, enriched with catalog data by merchant type
+  // Fallback: build graph from MOCK_MERCHANTS + ONTARIO_MOCK_MERCHANTS, enriched with catalog data
   const buildMockGraph = () => {
-    const nodes = MOCK_MERCHANTS.map((m) => {
+    const allMock = [...MOCK_MERCHANTS, ...ONTARIO_MOCK_MERCHANTS];
+    const nodes = allMock.map((m) => {
       const category = TYPE_CATEGORY[m.type];
       const catalogForType = category ? (productsByCategory.get(category) ?? []) : [];
       const hasCatalog = catalogForType.length > 0;
@@ -686,7 +975,8 @@ router.get("/places-graph", async (req, res) => {
         placeId: m.id,
         name: m.name,
         type: m.type,
-        city: "Niagara" as string | undefined,
+        chainTier: "local" as const,
+        city: ("city" in m ? (m as { city: string }).city : "Niagara") as string | undefined,
         lat: m.lat,
         lng: m.lng,
         rating: m.rating,
@@ -753,13 +1043,14 @@ router.get("/places-graph", async (req, res) => {
     );
     const rawBatches = await Promise.all(searchCalls);
 
-    // Deduplicate by place_id, filter non-commerce types
+    // Deduplicate by place_id, filter non-commerce types, filter enterprise chains
     const seen = new Set<string>();
     const places: (PlacesResult & { _city: string })[] = [];
     for (const batch of rawBatches) {
       for (const p of batch) {
         if (seen.has(p.place_id)) continue;
         if (p.types.some((t) => SKIP_TYPES.has(t))) continue;
+        if (isEnterpriseChain(p.name)) continue;
         seen.add(p.place_id);
         places.push(p as PlacesResult & { _city: string });
       }
@@ -769,11 +1060,11 @@ router.get("/places-graph", async (req, res) => {
     const qualityScore = (p: PlacesResult) =>
       (p.rating ?? 3.5) * Math.log((p.user_ratings_total ?? 0) + 1);
 
-    // Take top 50 across all Ontario cities
+    // Take top 150 across all Ontario cities (up from 50)
     const topPlaces = places
       .filter((p) => (p.user_ratings_total ?? 0) >= 10)
       .sort((a, b) => qualityScore(b) - qualityScore(a))
-      .slice(0, 50);
+      .slice(0, 150);
 
     // Place Details (website) in parallel — used for Shopify domain matching
     const detailsMap = new Map<string, { website?: string }>();
@@ -798,12 +1089,18 @@ router.get("/places-graph", async (req, res) => {
     const nodes = topPlaces.map((p) => {
       const website = detailsMap.get(p.place_id)?.website ?? null;
       const type = googleTypesToMerchantType(p.types);
+      const chainTier = classifyChainTier(p.name, p.types);
 
-      // Strict domain-match: normalize Places website → lookup in catalog byDomain map
+      // Domain matching: normalize Places website, try multiple subdomain variants
       let catalogEntry: { products: CatalogProduct[]; categories: Set<string> } | undefined;
       if (website) {
         const domain = normalizeDomain(website);
-        catalogEntry = byDomain.get(domain);
+        // Try exact match, then strip common shop subdomain prefixes
+        catalogEntry = byDomain.get(domain)
+          ?? byDomain.get(domain.replace(/^shop\./, ""))
+          ?? byDomain.get(domain.replace(/^store\./, ""))
+          ?? byDomain.get(domain.replace(/^boutique\./, ""))
+          ?? byDomain.get(domain.replace(/^buy\./, ""));
       }
 
       const shopifyStatus: "verified" | "ghost" = catalogEntry ? "verified" : "ghost";
@@ -814,6 +1111,7 @@ router.get("/places-graph", async (req, res) => {
         placeId: p.place_id,
         name: p.name,
         type,
+        chainTier,
         city: (p as PlacesResult & { _city: string })._city,
         lat: p.geometry.location.lat,
         lng: p.geometry.location.lng,
@@ -841,7 +1139,7 @@ router.get("/places-graph", async (req, res) => {
       );
       const domainsToSearch = [...byDomain.entries()]
         .sort((a, b) => b[1].products.length - a[1].products.length)
-        .slice(0, 10)
+        .slice(0, 25)
         .filter(([d]) => !inNodes.has(d));
 
       // Track which placeIds we've already added (including from topPlaces)
@@ -870,10 +1168,12 @@ router.get("/places-graph", async (req, res) => {
               Math.hypot(lat - city.lat, lng - city.lng) < Math.hypot(lat - best.lat, lng - best.lng)
                 ? city : best
             );
+            if (isEnterpriseChain(p.name)) return null;
             return {
               placeId: p.place_id,
               name: p.name,
               type: googleTypesToMerchantType(p.types),
+              chainTier: classifyChainTier(p.name, p.types),
               city: closest.name,
               lat, lng,
               rating: p.rating ?? null,
@@ -898,6 +1198,14 @@ router.get("/places-graph", async (req, res) => {
         }
       }
     }
+
+    // ── Filter enterprise-tier nodes ──────────────────────────────────────────
+    // Remove any nodes still classified as enterprise (blocklist hits that
+    // slipped past the isEnterpriseChain pre-filter due to name variants).
+    // IKEA (allowlisted, chainTier="regional") is retained.
+    const nonEnterprise = nodes.filter((n) => n.chainTier !== "enterprise");
+    nodes.length = 0;
+    nodes.push(...nonEnterprise);
 
     // ── Step C: Demo fallback — guarantee a verified cluster ─────────────────
     // If the catalog domain matches + text searches produced 0 verified nodes,
