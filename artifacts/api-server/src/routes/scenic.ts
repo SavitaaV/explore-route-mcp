@@ -821,40 +821,67 @@ const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
   "best buy", "the source", "future shop", "staples", "business depot",
   "chapters", "indigo", "coles bookstore",
   "aldo", "shoe company", "sport expert",
+  // Large-format global brands that are Shopify-verified but not small/local
+  // (listed here so classifyChainTier starts them as "enterprise" — verifyAndPromote
+  //  will promote them to "regional" only when their Shopify verification is confirmed)
+  "ikea",
 ];
 
 // Explicit allowlist — brands that would otherwise hit the blocklist but are
 // Shopify-verified and should remain visible.
 const ENTERPRISE_CHAIN_ALLOWLIST: string[] = ["ikea"];
 
-// Large Canadian multi-province brands that are filtered unless Shopify-verified.
-// These are too widespread to be "regional" but not as globally ubiquitous as enterprise chains.
+// Large Canadian multi-province brands filtered unless Shopify-verified.
+// These are national-scale but not global franchise chains.
 const NATIONAL_CHAIN_LIST: string[] = [
-  "holt renfrew", "roots canada", "roots clothing", "lush cosmetics",
-  "lush fresh", "arc'teryx", "sport chek", "marks work", "reitmans",
-  "l'occitane", "anthropologie", "williams-sonoma", "pottery barn",
-  "restoration hardware", "rh ", "crate and barrel", "west elm",
-  "indochino", "frank and oak", "aritzia",
+  "holt renfrew", "roots canada", "roots clothing", "lush cosmetics", "lush fresh",
+  "arc'teryx", "marks work", "l'occitane", "anthropologie", "williams-sonoma",
+  "pottery barn", "restoration hardware", "rh ", "crate and barrel", "west elm",
+  "indochino", "frank and oak", "aritzia", "simons", "ten thousand villages",
+  "highland farms", "summerhill market", "pusateri's", "longo's", "longos",
 ];
 
-// isEnterpriseChain: used for the initial Places dedup pre-filter.
-// Allowlisted brands pass through (they may be verified later).
+// Ontario-rooted multi-location brands that are clearly regional and should show
+// in the graph unconditionally (no Shopify verification required).
+const REGIONAL_BRAND_LIST: string[] = [
+  "balzac's", "pilot coffee", "bridgehead", "elora brewing", "mill street brewery",
+  "soma chocolate", "nadège", "nadege", "glad day", "greaves jams",
+  "peller estates", "inniskillin", "jackson-triggs", "trius winery", "stratus",
+  "reif estate", "thirty bench", "tawse winery", "cave spring", "henry of pelham",
+  "flat rock cellars", "kacaba vineyard", "fielding estate", "sue-ann staff",
+  "treadwell", "oliv tasting", "niagara home bakery",
+];
+
+// Google Places type patterns that signal a large-format enterprise store
+// even if the name doesn't appear in any list.
+const ENTERPRISE_PLACE_TYPES = new Set([
+  "department_store", "furniture_store", "car_dealer",
+  "car_rental", "car_repair", "moving_company", "storage",
+]);
+
+// isEnterpriseChain: used at Places dedup stage.
+// Allowlisted brands pass through so they can be Shopify-verified and promoted later.
 function isEnterpriseChain(name: string): boolean {
   const lower = name.toLowerCase();
   if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return false;
   return ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b));
 }
 
-// classifyChainTier: assigns an initial tier based solely on name.
-// "local"    — single-location independent business
-// "regional" — Ontario/multi-city brand (5–50 locations)
-// "national" — large Canadian multi-province brand, needs verification to appear
-// "enterprise" — blocked global/national chain; removed from graph unless allowlisted+verified
-function classifyChainTier(name: string, _types: string[]): "local" | "regional" | "national" | "enterprise" {
+// classifyChainTier: assigns an initial tier using name lists AND Google Place types.
+// "local"      — single-location independent business
+// "regional"   — Ontario/multi-city brand (5–50 locations); shown unconditionally
+// "national"   — large Canadian multi-province brand; needs verification to appear
+// "enterprise" — blocked chain; removed unless allowlisted + Shopify-verified
+function classifyChainTier(name: string, types: string[]): "local" | "regional" | "national" | "enterprise" {
   const lower = name.toLowerCase();
-  // Allowlisted brands start as "enterprise" — verifyAndPromote() upgrades them if verified
+  // Blocklist (includes "ikea") → enterprise; verifyAndPromote() handles allowlist promotion
   if (ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b))) return "enterprise";
+  // Large-format type signals → treat as enterprise even if name not in list
+  if (types.some((t) => ENTERPRISE_PLACE_TYPES.has(t))) return "enterprise";
+  // National brands → need verification
   if (NATIONAL_CHAIN_LIST.some((b) => lower.includes(b))) return "national";
+  // Known Ontario regional brands → always shown
+  if (REGIONAL_BRAND_LIST.some((b) => lower.includes(b))) return "regional";
   return "local";
 }
 
@@ -1104,11 +1131,12 @@ router.get("/places-graph", async (req, res) => {
     const qualityScore = (p: PlacesResult) =>
       (p.rating ?? 3.5) * Math.log((p.user_ratings_total ?? 0) + 1);
 
-    // Take top 150 across all Ontario cities (up from 50)
+    // Take top 350 candidates (before chain filtering) to ensure ≥150 survive after
+    // enterprise/national removal. Over-fetch upstream; trim post-filter.
     const topPlaces = places
       .filter((p) => (p.user_ratings_total ?? 0) >= 10)
       .sort((a, b) => qualityScore(b) - qualityScore(a))
-      .slice(0, 150);
+      .slice(0, 350);
 
     // Place Details (website) in parallel — used for Shopify domain matching
     const detailsMap = new Map<string, { website?: string }>();
