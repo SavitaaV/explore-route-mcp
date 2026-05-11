@@ -779,19 +779,41 @@ const PLACES_SEARCH_TYPES = [
 // Enterprise chain blocklist — names or name fragments that identify national /
 // multinational chains to exclude from the local commerce graph.
 // ─────────────────────────────────────────────────────────────────────────────
-// matchesBrand: safe brand-name matching that avoids false positives from
-// substring collisions on short terms (e.g. "bay" inside "Bayfield Bakery").
+// normalizeBrand: canonical form for brand matching.
+// Strips diacritics, lowercases, and replaces all punctuation/symbols with spaces,
+// then collapses runs of whitespace. Applied to BOTH the business name AND each
+// blocklist term before comparison so that "McDonald's" ↔ "mcdonald s",
+// "A&W" ↔ "a w", "Petro-Canada" ↔ "petro canada", etc. always match.
+function normalizeBrand(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")   // strip diacritics
+    .replace(/[^a-z0-9\s]/g, " ")                        // punctuation → space
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// matchesBrand: safe, normalized brand-name matching.
 //
-// • Multi-word terms (contain spaces) use plain substring match — multi-word
-//   phrases are rarely ambiguous ("the bay" won't appear inside "Bayswater Café").
-// • Single-word terms require an exact token match. The business name is
-//   tokenized on whitespace, hyphens, apostrophes, and common punctuation so
-//   "Shelley's" → ["shelley","s"] (won't match "shell"), and
-//   "Bayfield" → ["bayfield"] (won't match "bay").
-function matchesBrand(lowerName: string, term: string): boolean {
-  if (term.includes(" ")) return lowerName.includes(term);
-  const tokens = lowerName.split(/[\s\-''&,.()/]+/).filter(Boolean);
-  return tokens.includes(term);
+// After normalizing both sides:
+// • Multi-word (normalized) terms use substring match on the normalized name —
+//   "hudson s bay" won't appear inside "bayfield bakery" (no "hudson").
+// • Single-word (normalized) terms require an exact token match so "bay"
+//   (from "the bay") does NOT match "bayfield" (tokens: ["bayfield"]).
+//
+// Examples:
+//   "McDonald's Restaurant" ↔ "mcdonald's"  → norm names: "mcdonald s restaurant"
+//                                              norm term: "mcdonald s" (multi-word) → ✓
+//   "A&W Burger Bar"        ↔ "a&w"         → "a w burger bar" ↔ "a w" (multi) → ✓
+//   "Petro-Canada"          ↔ "petro-canada"→ "petro canada"  ↔ "petro canada" → ✓
+//   "Bayfield Bakery"       ↔ "bay"         → tokens ["bayfield","bakery"] ↔ "bay" → ✗
+//   "Shelley's Boutique"    ↔ "shell"       → tokens ["shelley","s","boutique"] → ✗
+function matchesBrand(name: string, term: string): boolean {
+  const normName = normalizeBrand(name);
+  const normTerm = normalizeBrand(term);
+  if (normTerm.includes(" ")) return normName.includes(normTerm);
+  const tokens = normName.split(/\s+/).filter(Boolean);
+  return tokens.includes(normTerm);
 }
 
 const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
@@ -806,7 +828,7 @@ const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
   // Pharmacy chains
   "shoppers drug mart", "rexall", "london drugs", "pharmasave", "guardian pharmacy",
   // Fast food / QSR
-  "tim hortons", "mcdonald's", "subway", "harvey's", "wendy's", "burger king",
+  "tim horton", "mcdonald", "subway", "harvey's", "wendy's", "burger king",
   "kfc", "pizza pizza", "pizza hut", "domino's", "a&w", "dairy queen",
   "popeyes", "five guys", "chipotle", "taco bell", "dunkin",
   // Coffee chains
