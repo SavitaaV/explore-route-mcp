@@ -4,7 +4,9 @@ import {
   useGetMerchants,
   useGetMerchantCard,
   useGetMcpTools,
+  usePlanDiscoveryRoute,
 } from "@workspace/api-client-react";
+import type { DiscoveryRoute } from "@workspace/api-client-react";
 import { MapView } from "@/components/MapView";
 import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
@@ -65,10 +67,20 @@ export default function Home() {
   const [routeParams, setRouteParams] = useState<{ origin: string; dest: string; mode: string } | null>(null);
   const [merchantCenter, setMerchantCenter] = useState<{ lat: number; lng: number } | null>(null);
 
+  // Discovery route — intent-based route from plan_discovery_route MCP tool
+  const [discoveryParams, setDiscoveryParams] = useState<{ intent: string; city?: string } | null>(null);
+
   const journeyRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Queries — only fire when route/location is known
+  const { data: discoveryRoute, isLoading: discoveryLoading } = usePlanDiscoveryRoute(
+    discoveryParams
+      ? { intent: discoveryParams.intent, ...(discoveryParams.city ? { city: discoveryParams.city } : {}) }
+      : { intent: "" },
+    { query: { enabled: !!discoveryParams, staleTime: 60_000 } }
+  );
+
   const { data: route, isLoading: routeLoading } = useGetScenicRoute(
     routeParams
       ? { origin: routeParams.origin, destination: routeParams.dest, mode: routeParams.mode }
@@ -138,6 +150,10 @@ export default function Home() {
     setJourneyProgress(0);
     setSelectedMerchantId(null);
     if (journeyRef.current) clearInterval(journeyRef.current);
+  }, []);
+
+  const handleDiscoveryRequest = useCallback((intent: string, city?: string) => {
+    setDiscoveryParams({ intent, city });
   }, []);
 
   useEffect(() => () => {
@@ -299,6 +315,7 @@ export default function Home() {
                     onPinClick={handlePinClick}
                     isLoading={routeLoading || merchantsLoading}
                     routeRequested={!!routeParams}
+                    discoveryRoute={discoveryRoute ?? null}
                   />
 
                   {/* Overlay when MCP not enabled */}
@@ -372,6 +389,9 @@ export default function Home() {
                     onStartJourney={handleStartJourney}
                     userPosition={userPosition}
                     onMerchantFocus={handlePinClick}
+                    onDiscoveryRequest={handleDiscoveryRequest}
+                    discoveryRoute={discoveryRoute ?? null}
+                    discoveryLoading={discoveryLoading}
                   />
                 </div>
 

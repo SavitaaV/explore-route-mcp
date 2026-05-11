@@ -16,6 +16,29 @@ type Merchant = {
   isOpen: boolean | null;
 };
 
+interface DiscoveryMerchant {
+  placeId: string;
+  name: string;
+  type: string;
+  lat: number;
+  lng: number;
+  vicinity: string;
+  rating: number | null;
+  shopifyStatus: "verified" | "ghost";
+  isEvent: boolean;
+  distanceFromStartKm: number;
+  checkoutUrl?: string | null;
+}
+
+interface DiscoveryRouteData {
+  intent: string;
+  resolvedLocation: { lat: number; lng: number; name: string };
+  merchants: DiscoveryMerchant[];
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+  source: "google" | "mock";
+}
+
 interface MapViewProps {
   route: {
     encodedPolyline: string;
@@ -32,6 +55,7 @@ interface MapViewProps {
   onPinClick: (id: string) => void;
   isLoading: boolean;
   routeRequested?: boolean;
+  discoveryRoute?: DiscoveryRouteData | null;
 }
 
 declare global {
@@ -76,6 +100,7 @@ function SvgMapPlaceholder({
   journeyProgress,
   journeyStarted,
   route,
+  discoveryRoute,
 }: {
   merchants: Merchant[];
   selectedMerchantId: string | null;
@@ -83,6 +108,7 @@ function SvgMapPlaceholder({
   journeyProgress: number;
   journeyStarted: boolean;
   route: MapViewProps["route"];
+  discoveryRoute?: DiscoveryRouteData | null;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -228,6 +254,29 @@ function SvgMapPlaceholder({
             </g>
           );
         })}
+
+        {/* Discovery route overlay */}
+        {discoveryRoute && discoveryRoute.merchants.length > 1 && (() => {
+          const pts = discoveryRoute.merchants.map((m) => mapToSVG(m.lat, m.lng));
+          const dPath = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+          return (
+            <g>
+              <path d={dPath} stroke="rgba(99,102,241,0.5)" strokeWidth="8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              <path d={dPath} stroke="#6366f1" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="8 5" />
+              {discoveryRoute.merchants.map((m, i) => {
+                const { x, y } = mapToSVG(m.lat, m.lng);
+                const color = m.shopifyStatus === "verified" ? "#059669" : "#d97706";
+                const emoji = m.isEvent ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
+                return (
+                  <g key={`dr-${m.placeId}-${i}`} transform={`translate(${x - 11}, ${y - 22})`}>
+                    <path d="M11 0C6.58 0 3 3.58 3 8c0 6 8 14 8 14s8-8 8-14c0-4.42-3.58-8-8-8z" fill={color} stroke="white" strokeWidth="1.5" />
+                    <text x="11" y="10" textAnchor="middle" fontSize="7" dominantBaseline="middle">{emoji}</text>
+                  </g>
+                );
+              })}
+            </g>
+          );
+        })()}
       </svg>
 
       {/* Route info card — compact for phone frame */}
@@ -252,6 +301,7 @@ function GoogleMapComponent({
   journeyProgress,
   journeyStarted,
   route,
+  discoveryRoute,
 }: {
   merchants: Merchant[];
   selectedMerchantId: string | null;
@@ -259,11 +309,14 @@ function GoogleMapComponent({
   journeyProgress: number;
   journeyStarted: boolean;
   route: MapViewProps["route"];
+  discoveryRoute?: DiscoveryRouteData | null;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const polylineRef = useRef<google.maps.Polyline | null>(null);
+  const discoveryPolylineRef = useRef<google.maps.Polyline | null>(null);
+  const discoveryMarkersRef = useRef<google.maps.Marker[]>([]);
 
   useEffect(() => {
     if (!mapRef.current || !window.google) return;
@@ -308,6 +361,60 @@ function GoogleMapComponent({
     }
   }, [route]);
 
+  // Discovery route polyline + pins
+  useEffect(() => {
+    if (!mapInstanceRef.current || !window.google) return;
+    // Clear old discovery overlays
+    if (discoveryPolylineRef.current) { discoveryPolylineRef.current.setMap(null); discoveryPolylineRef.current = null; }
+    discoveryMarkersRef.current.forEach((m) => m.setMap(null));
+    discoveryMarkersRef.current = [];
+
+    if (!discoveryRoute || discoveryRoute.merchants.length === 0) return;
+
+    const path = discoveryRoute.merchants.map((m) => ({ lat: m.lat, lng: m.lng }));
+    discoveryPolylineRef.current = new window.google.maps.Polyline({
+      path,
+      geodesic: true,
+      strokeColor: "#6366f1",
+      strokeOpacity: 0.85,
+      strokeWeight: 4,
+      map: mapInstanceRef.current,
+      icons: [{
+        icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 4 },
+        offset: "0",
+        repeat: "20px",
+      }],
+    });
+
+    // Pins for discovery merchants
+    discoveryRoute.merchants.forEach((m) => {
+      const emoji = m.isEvent ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
+      const color = m.shopifyStatus === "verified" ? "#059669" : "#d97706";
+      const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="42" viewBox="0 0 36 42">
+        <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter>
+        <path d="M18 2C10.27 2 4 8.27 4 16C4 26 18 40 18 40C18 40 32 26 32 16C32 8.27 25.73 2 18 2Z"
+          fill="${color}" stroke="white" stroke-width="2" filter="url(#s)"/>
+        <text x="18" y="20" text-anchor="middle" dominant-baseline="middle" font-size="12">${emoji}</text>
+      </svg>`;
+      const marker = new window.google.maps.Marker({
+        position: { lat: m.lat, lng: m.lng },
+        map: mapInstanceRef.current,
+        title: m.name,
+        icon: {
+          url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svgIcon),
+          scaledSize: new window.google.maps.Size(36, 42),
+          anchor: new window.google.maps.Point(18, 42),
+        },
+      });
+      discoveryMarkersRef.current.push(marker);
+    });
+
+    // Re-center map to discovery route bounds
+    const bounds = new window.google.maps.LatLngBounds();
+    path.forEach((p) => bounds.extend(p));
+    mapInstanceRef.current.fitBounds(bounds, { top: 56, bottom: 32, left: 24, right: 24 });
+  }, [discoveryRoute]);
+
   useEffect(() => {
     if (!mapInstanceRef.current || !window.google || !merchants.length) return;
     // Clear previous markers
@@ -351,7 +458,17 @@ function GoogleMapComponent({
   return (
     <div className="relative w-full h-full">
       <div ref={mapRef} className="w-full h-full" />
-      {route && (
+      {discoveryRoute && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white rounded-full border border-indigo-400/30 z-10 pointer-events-none whitespace-nowrap" style={{ fontSize: 10, padding: "4px 12px", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ color: "#818cf8" }}>✦</span>
+          <span style={{ fontWeight: 700 }}>{discoveryRoute.intent}</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span>{discoveryRoute.merchants.length} stops</span>
+          <span style={{ opacity: 0.35 }}>·</span>
+          <span style={{ color: "#34d399", fontWeight: 600 }}>{discoveryRoute.estimatedWalkMinutes}min</span>
+        </div>
+      )}
+      {!discoveryRoute && route && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md text-white rounded-full border border-white/10 z-10 pointer-events-none whitespace-nowrap" style={{ fontSize: 10, padding: "4px 12px", display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontWeight: 700 }}>{route.distanceKm}km</span>
           <span style={{ opacity: 0.35 }}>·</span>
@@ -364,7 +481,7 @@ function GoogleMapComponent({
   );
 }
 
-export function MapView({ route, merchants, journeyProgress, journeyStarted, selectedMerchantId, onPinClick, isLoading }: MapViewProps) {
+export function MapView({ route, merchants, journeyProgress, journeyStarted, selectedMerchantId, onPinClick, isLoading, discoveryRoute }: MapViewProps) {
   const [mapsLoaded, setMapsLoaded] = useState(false);
   const [mapsError, setMapsError] = useState(false);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
@@ -410,6 +527,7 @@ export function MapView({ route, merchants, journeyProgress, journeyStarted, sel
         journeyProgress={journeyProgress}
         journeyStarted={journeyStarted}
         route={route}
+        discoveryRoute={discoveryRoute}
       />
     );
   }
@@ -423,6 +541,7 @@ export function MapView({ route, merchants, journeyProgress, journeyStarted, sel
       journeyProgress={journeyProgress}
       journeyStarted={journeyStarted}
       route={route}
+      discoveryRoute={discoveryRoute}
     />
   );
 }

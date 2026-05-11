@@ -773,6 +773,7 @@ const PLACES_SEARCH_TYPES = [
   "restaurant", "cafe", "bakery", "store",
   "gift_shop", "clothing_store", "food", "art_gallery",
   "florist", "jewelry_store", "book_store",
+  "farmer_market", "market",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1115,7 +1116,9 @@ router.get("/places-graph", async (req, res) => {
         if (score >= 0.2) {
           edges.push({
             sourceId: a.placeId, targetId: b.placeId, score,
-            proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}`,
+            proximityM: Math.round(dist),
+            distanceKm: Math.round(dist / 100) / 10,
+            affinityReason: `${a.type} × ${b.type}`,
             sharedCategories: shared, catalogOverlap: Math.round(catalogOverlap * 100) / 100,
           });
         }
@@ -1379,6 +1382,7 @@ router.get("/places-graph", async (req, res) => {
           edges.push({
             sourceId: a.placeId, targetId: b.placeId, score,
             proximityM: Math.round(dist),
+            distanceKm: Math.round(dist / 100) / 10,
             affinityReason: `${a.type} × ${b.type}${sameCity ? ` · ${a.city}` : ""}`,
             sharedCategories,
             catalogOverlap: Math.round(catalogOverlap * 100) / 100,
@@ -1404,6 +1408,354 @@ router.get("/places-graph", async (req, res) => {
   } catch (err) {
     req.log.warn({ err }, "places-graph: Google Places failed, falling back to mock");
     res.json(buildMockGraph());
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers for plan-discovery-route
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Geocode a city / address string to lat/lng using Google Geocoding API.
+// Returns null if API key absent or result not in Ontario bounding box.
+async function geocodeLocation(query: string): Promise<{ lat: number; lng: number; name: string } | null> {
+  if (!GOOGLE_MAPS_API_KEY) return null;
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query + " Ontario Canada")}&key=${GOOGLE_MAPS_API_KEY}`;
+    const r = await fetch(url);
+    const d = (await r.json()) as {
+      status: string;
+      results?: Array<{ geometry: { location: { lat: number; lng: number } }; formatted_address: string }>;
+    };
+    if (d.status !== "OK" || !d.results?.[0]) return null;
+    const { lat, lng } = d.results[0].geometry.location;
+    // Ontario bounding box
+    if (lat < 41 || lat > 57 || lng < -96 || lng > -73) return null;
+    return { lat, lng, name: d.results[0].formatted_address };
+  } catch {
+    return null;
+  }
+}
+
+// Nearest-neighbour TSP ordering — greedy, O(n²)
+function nearestNeighborOrder<T extends { lat: number; lng: number }>(
+  start: { lat: number; lng: number },
+  items: T[]
+): T[] {
+  if (items.length === 0) return [];
+  const remaining = [...items];
+  const ordered: T[] = [];
+  let current = start;
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const d = haversineMetre(current.lat, current.lng, remaining[i].lat, remaining[i].lng);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    ordered.push(remaining[bestIdx]);
+    current = remaining[bestIdx];
+    remaining.splice(bestIdx, 1);
+  }
+  return ordered;
+}
+
+// Intent → Google Places text search query + place types to try
+function intentToSearchTerms(intent: string): { query: string; types: string[] } {
+  const lower = intent.toLowerCase();
+  if (lower.includes("wine") || lower.includes("winery") || lower.includes("vineyard")) {
+    return { query: "winery wine tasting", types: ["bar", "tourist_attraction"] };
+  }
+  if (lower.includes("farmer") || lower.includes("market") || lower.includes("produce")) {
+    return { query: "farmers market local produce", types: ["grocery_or_supermarket", "market"] };
+  }
+  if (lower.includes("artisan") || lower.includes("craft") || lower.includes("handmade")) {
+    return { query: "artisan craft shop handmade", types: ["store", "art_gallery"] };
+  }
+  if (lower.includes("coffee") || lower.includes("cafe") || lower.includes("espresso")) {
+    return { query: "specialty coffee cafe roaster", types: ["cafe"] };
+  }
+  if (lower.includes("bakery") || lower.includes("bread") || lower.includes("pastry")) {
+    return { query: "artisan bakery bread pastry", types: ["bakery"] };
+  }
+  if (lower.includes("chocolate") || lower.includes("sweet") || lower.includes("candy")) {
+    return { query: "chocolate artisan confectionery", types: ["store", "bakery"] };
+  }
+  if (lower.includes("book") || lower.includes("bookshop") || lower.includes("bookstore")) {
+    return { query: "independent bookstore book shop", types: ["book_store"] };
+  }
+  if (lower.includes("gift") || lower.includes("souvenir") || lower.includes("boutique")) {
+    return { query: "boutique gift shop local", types: ["store", "gift_shop"] };
+  }
+  if (lower.includes("brewery") || lower.includes("beer") || lower.includes("craft beer")) {
+    return { query: "craft brewery taproom", types: ["bar"] };
+  }
+  // Generic local shop discovery
+  return { query: intent + " local shop", types: ["store", "tourist_attraction"] };
+}
+
+// Mock discovery route for fallback (no API key)
+function buildMockDiscoveryRoute(
+  intent: string,
+  centre: { lat: number; lng: number; name: string }
+): {
+  intent: string;
+  resolvedLocation: { lat: number; lng: number; name: string };
+  merchants: Array<{
+    placeId: string; name: string; type: string;
+    lat: number; lng: number; vicinity: string;
+    rating: number | null; userRatingsTotal: number;
+    distanceFromStartKm: number; shopifyStatus: "verified" | "ghost";
+    isEvent: boolean; chainTier: string; openNow: boolean | null;
+    photoUrl: string | null; checkoutUrl: string | null;
+  }>;
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+  source: "mock";
+} {
+  const candidates = [...MOCK_MERCHANTS, ...ONTARIO_MOCK_MERCHANTS].filter((m) => {
+    const lower = intent.toLowerCase();
+    if (lower.includes("wine")) return m.type === "winery";
+    if (lower.includes("farmer") || lower.includes("market")) return m.type === "artisan";
+    if (lower.includes("coffee") || lower.includes("cafe")) return m.type === "cafe";
+    if (lower.includes("bakery") || lower.includes("bread")) return m.type === "bakery";
+    return true;
+  });
+
+  const ordered = nearestNeighborOrder(centre, candidates.slice(0, 8)).map((m) => {
+    const distM = haversineMetre(centre.lat, centre.lng, m.lat, m.lng);
+    return {
+      placeId: m.id,
+      name: m.name,
+      type: m.type,
+      lat: m.lat,
+      lng: m.lng,
+      vicinity: m.address,
+      rating: m.rating,
+      userRatingsTotal: m.recentVisitors ?? 0,
+      distanceFromStartKm: Math.round(distM / 100) / 10,
+      shopifyStatus: (m.isOnShopify ? "verified" : "ghost") as "verified" | "ghost",
+      isEvent: false,
+      chainTier: "local",
+      openNow: m.isOpen ?? null,
+      photoUrl: m.photoUrl,
+      checkoutUrl: "https://shopify.dev/docs/agents",
+    };
+  });
+
+  // Total walking distance along the NN path
+  let totalM = 0;
+  let prev = centre;
+  for (const m of ordered) {
+    totalM += haversineMetre(prev.lat, prev.lng, m.lat, m.lng);
+    prev = m;
+  }
+  const totalKm = Math.round(totalM / 100) / 10;
+  return {
+    intent,
+    resolvedLocation: centre,
+    merchants: ordered,
+    totalDistanceKm: totalKm,
+    estimatedWalkMinutes: Math.round(totalKm * 12),
+    source: "mock",
+  };
+}
+
+// GET /api/plan-discovery-route
+router.get("/plan-discovery-route", async (req, res) => {
+  const { intent, city, lat, lng, radius } = req.query as Record<string, string | undefined>;
+
+  if (!intent?.trim()) {
+    res.status(400).json({ error: "intent query parameter is required" });
+    return;
+  }
+
+  const radiusM = parseInt(radius ?? "2000", 10);
+  const clampedRadius = Number.isFinite(radiusM) ? Math.min(Math.max(radiusM, 500), 10_000) : 2000;
+
+  // Resolve centre: explicit lat/lng > geocode city > default to NOTL
+  let centre: { lat: number; lng: number; name: string };
+
+  const latN = lat ? parseFloat(lat) : NaN;
+  const lngN = lng ? parseFloat(lng) : NaN;
+  if (Number.isFinite(latN) && Number.isFinite(lngN) && latN >= 41 && latN <= 57) {
+    centre = { lat: latN, lng: lngN, name: city ?? "Custom location" };
+  } else if (city?.trim()) {
+    const geocoded = await geocodeLocation(city.trim());
+    if (!geocoded) {
+      res.status(400).json({ error: `Could not geocode city: "${city}"` });
+      return;
+    }
+    centre = geocoded;
+  } else {
+    // Default: NOTL Old Town
+    centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
+  }
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    req.log.info({ intent, centre }, "plan-discovery-route: no API key, using mock");
+    res.json(buildMockDiscoveryRoute(intent.trim(), centre));
+    return;
+  }
+
+  try {
+    const { query, types } = intentToSearchTerms(intent.trim());
+
+    // 1. Text search for the intent in the area
+    const textUrl =
+      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+      `?query=${encodeURIComponent(query + " " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius}&key=${GOOGLE_MAPS_API_KEY}`;
+    const textR = await fetch(textUrl);
+    const textD = (await textR.json()) as { status: string; results?: PlacesResult[] };
+
+    // 2. Nearby search for the primary type
+    const nearbySearches = types.map((t) => {
+      const nearbyUrl =
+        `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+        `?location=${centre.lat},${centre.lng}&radius=${clampedRadius}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`;
+      return fetch(nearbyUrl)
+        .then((r) => r.json() as Promise<{ status: string; results?: PlacesResult[] }>)
+        .then((d) => d.results ?? [])
+        .catch(() => [] as PlacesResult[]);
+    });
+    const nearbyBatches = await Promise.all(nearbySearches);
+
+    // 3. Farmers-market / event text search (always run as supplemental)
+    const eventUrl =
+      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+      `?query=${encodeURIComponent("farmers market event pop-up " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius * 1.5}&key=${GOOGLE_MAPS_API_KEY}`;
+    const eventR = await fetch(eventUrl);
+    const eventD = (await eventR.json()) as { status: string; results?: PlacesResult[] };
+
+    // Merge + deduplicate
+    const seen = new Set<string>();
+    const SKIP_TYPES = new Set([
+      "lodging", "pharmacy", "drugstore", "gas_station", "hospital",
+      "bank", "atm", "political", "locality", "transit_station",
+    ]);
+    const allPlaces: (PlacesResult & { isEvent: boolean })[] = [];
+
+    const addPlaces = (results: PlacesResult[], isEvent: boolean) => {
+      for (const p of results) {
+        if (seen.has(p.place_id)) continue;
+        if (p.types.some((t) => SKIP_TYPES.has(t))) continue;
+        if (isEnterpriseChain(p.name)) continue;
+        // Must be within 1.5× the radius of the centre
+        const distM = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
+        if (distM > clampedRadius * 1.5) continue;
+        seen.add(p.place_id);
+        allPlaces.push({ ...p, isEvent });
+      }
+    };
+
+    addPlaces(textD.results ?? [], false);
+    for (const batch of nearbyBatches) addPlaces(batch, false);
+    // Event layer — mark as isEvent
+    addPlaces(
+      (eventD.results ?? []).filter((p) =>
+        /market|event|pop.up|festival|fair/i.test(p.name)
+      ),
+      true
+    );
+
+    if (allPlaces.length === 0) {
+      req.log.info({ intent, centre }, "plan-discovery-route: no Places results, using mock");
+      res.json(buildMockDiscoveryRoute(intent.trim(), centre));
+      return;
+    }
+
+    // Quality-sort then cap at 20 candidates
+    allPlaces.sort((a, b) => {
+      const qa = (a.rating ?? 3.5) * Math.log((a.user_ratings_total ?? 0) + 1);
+      const qb = (b.rating ?? 3.5) * Math.log((b.user_ratings_total ?? 0) + 1);
+      return qb - qa;
+    });
+    const topPlaces = allPlaces.slice(0, 20);
+
+    // NN-order from centre
+    const ordered = nearestNeighborOrder(centre, topPlaces);
+
+    // Shopify verification: fetch catalog + domain-match
+    const { byDomain } = await fetchOntarioCatalog().catch(() => ({
+      byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
+    }));
+
+    // Place Details (website) in parallel for top 20
+    const detailsMap = new Map<string, { website?: string }>();
+    await Promise.all(
+      ordered.map(async (p) => {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website&key=${GOOGLE_MAPS_API_KEY}`;
+          const r = await fetch(url);
+          const d = (await r.json()) as { result?: { website?: string } };
+          if (d.result) detailsMap.set(p.place_id, d.result);
+        } catch { /* skip */ }
+      })
+    );
+
+    // Build result merchants
+    let totalM = 0;
+    let prev = centre;
+    const merchants = ordered.map((p) => {
+      const distFromStart = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
+      const stepM = haversineMetre(prev.lat, prev.lng, p.geometry.location.lat, p.geometry.location.lng);
+      totalM += stepM;
+      prev = p.geometry.location;
+
+      const website = detailsMap.get(p.place_id)?.website ?? null;
+      let shopifyStatus: "verified" | "ghost" = "ghost";
+      let checkoutUrl: string | null = null;
+      if (website) {
+        const domain = normalizeDomain(website);
+        const catalogEntry = byDomain.get(domain)
+          ?? byDomain.get(domain.replace(/^shop\./, ""))
+          ?? byDomain.get(domain.replace(/^store\./, ""));
+        if (catalogEntry) {
+          shopifyStatus = "verified";
+          checkoutUrl = catalogEntry.products[0]?.checkoutUrl ?? null;
+        }
+      }
+
+      const chainTier = classifyChainTier(p.name, p.types);
+      return {
+        placeId: p.place_id,
+        name: p.name,
+        type: googleTypesToMerchantType(p.types),
+        lat: p.geometry.location.lat,
+        lng: p.geometry.location.lng,
+        vicinity: p.vicinity ?? "",
+        rating: p.rating ?? null,
+        userRatingsTotal: p.user_ratings_total ?? 0,
+        distanceFromStartKm: Math.round(distFromStart / 100) / 10,
+        shopifyStatus,
+        isEvent: (p as PlacesResult & { isEvent: boolean }).isEvent,
+        chainTier,
+        openNow: p.opening_hours?.open_now ?? null,
+        photoUrl: null as string | null,
+        checkoutUrl,
+      };
+    });
+
+    const totalKm = Math.round(totalM / 100) / 10;
+
+    req.log.info({
+      intent, centre,
+      merchants: merchants.length,
+      verified: merchants.filter((m) => m.shopifyStatus === "verified").length,
+      events: merchants.filter((m) => m.isEvent).length,
+      totalKm,
+    }, "plan-discovery-route computed");
+
+    res.json({
+      intent: intent.trim(),
+      resolvedLocation: centre,
+      merchants,
+      totalDistanceKm: totalKm,
+      estimatedWalkMinutes: Math.round(totalKm * 12),
+      source: "google",
+    });
+  } catch (err) {
+    req.log.warn({ err }, "plan-discovery-route: error, falling back to mock");
+    res.json(buildMockDiscoveryRoute(intent.trim(), centre));
   }
 });
 
@@ -1460,6 +1812,37 @@ router.get("/mcp-tools", (_req, res) => {
           },
         },
         required: [],
+      },
+    },
+    {
+      name: "plan_discovery_route",
+      description:
+        "Plan an intent-based discovery route across Ontario. Given a shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan chocolates') and an optional city or lat/lng, geocodes the location, text-searches Google Places for matching merchants and pop-up events (including farmers markets), runs Shopify Global Catalog verification, and returns merchants ordered by nearest-neighbour walk path with total distance and estimated walk time. Use when the user wants to explore a theme rather than a fixed route.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          intent: {
+            type: "string",
+            description: "Shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan shops', 'craft beer')",
+          },
+          city: {
+            type: "string",
+            description: "Ontario city to discover in (e.g. 'Niagara-on-the-Lake', 'Toronto', 'Kingston'). Geocoded automatically.",
+          },
+          lat: {
+            type: "number",
+            description: "Latitude of search centre — alternative to city",
+          },
+          lng: {
+            type: "number",
+            description: "Longitude of search centre — alternative to city",
+          },
+          radius: {
+            type: "number",
+            description: "Search radius in metres (default 2000, max 10000)",
+          },
+        },
+        required: ["intent"],
       },
     },
   ]);

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -26,6 +26,29 @@ interface RouteContext {
   waypoints?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
+interface DiscoveryMerchant {
+  placeId: string;
+  name: string;
+  type: string;
+  lat: number;
+  lng: number;
+  vicinity: string;
+  rating: number | null;
+  shopifyStatus: "verified" | "ghost";
+  isEvent: boolean;
+  distanceFromStartKm: number;
+  checkoutUrl?: string | null;
+}
+
+interface DiscoveryRouteData {
+  intent: string;
+  resolvedLocation: { lat: number; lng: number; name: string };
+  merchants: DiscoveryMerchant[];
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+  source: "google" | "mock";
+}
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -39,6 +62,8 @@ interface ChatMessage {
   mcpActivated?: boolean;
   journeyCard?: boolean;
   locationCard?: boolean;
+  discoveryLoadingCard?: { intent: string; city?: string };
+  discoveryResultCard?: DiscoveryRouteData;
 }
 
 interface AiChatProps {
@@ -52,6 +77,9 @@ interface AiChatProps {
   onStartJourney: () => void;
   userPosition?: { lat: number; lng: number; progress?: number };
   onMerchantFocus?: (merchantId: string) => void;
+  onDiscoveryRequest?: (intent: string, city?: string) => void;
+  discoveryRoute?: DiscoveryRouteData | null;
+  discoveryLoading?: boolean;
 }
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
@@ -212,6 +240,140 @@ function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
   );
 }
 
+// ── Discovery intent detection ──────────────────────────────────────────────
+const DISCOVERY_PATTERNS: Array<{ regex: RegExp; intent: string }> = [
+  { regex: /wine\s+tour|winery|vineyard|wine\s+tasting/i, intent: "wine tour" },
+  { regex: /farmer[s']?\s+market|local\s+market|produce\s+market/i, intent: "farmers market" },
+  { regex: /artisan|craft\s+shop|handmade|local\s+maker/i, intent: "artisan shops" },
+  { regex: /coffee\s+tour|specialty\s+coffee|coffee\s+hop/i, intent: "specialty coffee" },
+  { regex: /bakery\s+tour|bread|pastry\s+tour/i, intent: "artisan bakery" },
+  { regex: /chocolate|confectionery|sweet\s+shop/i, intent: "chocolate artisan" },
+  { regex: /craft\s+beer|brewery\s+tour|taproom/i, intent: "craft brewery" },
+  { regex: /bookshop|bookstore\s+tour|independent\s+book/i, intent: "independent bookstore" },
+  { regex: /gift\s+shop|boutique\s+tour|souvenir/i, intent: "boutique gift shop" },
+  { regex: /plan\s+(a\s+)?discovery|discover\s+(local|merchants|shops)/i, intent: "local shops" },
+];
+
+function detectDiscoveryIntent(text: string): { intent: string; city?: string } | null {
+  for (const { regex, intent } of DISCOVERY_PATTERNS) {
+    if (regex.test(text)) {
+      // Try to extract a city name after "in", "near", "around"
+      const cityMatch = text.match(/(?:in|near|around|at)\s+([A-Z][a-z]+(?:[\s-][A-Z]?[a-z]+)*)/);
+      return { intent, city: cityMatch?.[1] };
+    }
+  }
+  return null;
+}
+
+// ── DiscoveryLoadingCard ─────────────────────────────────────────────────────
+function DiscoveryLoadingCard({ intent, city }: { intent: string; city?: string }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "12px 14px", marginTop: 8, maxWidth: 260 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Compass style={{ width: 13, height: 13, color: "#fff" }} />
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#111827" }}>Planning discovery route</p>
+          <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>
+            {intent}{city ? ` · ${city}` : " · Ontario"}
+          </p>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: "#34d399", opacity: 0.4 + i * 0.3, animation: `pulse 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+        ))}
+        <span style={{ fontSize: 10, color: "#6b7280", marginLeft: 4 }}>Searching Google Places + Shopify Catalog…</span>
+      </div>
+    </div>
+  );
+}
+
+// ── DiscoveryResultCard ──────────────────────────────────────────────────────
+function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
+  const [expanded, setExpanded] = useState(false);
+  const verified = route.merchants.filter((m) => m.shopifyStatus === "verified");
+  const events = route.merchants.filter((m) => m.isEvent);
+
+  function typeEmoji(type: string) {
+    switch (type) {
+      case "winery": return "🍷";
+      case "bakery": return "🥐";
+      case "cafe": return "☕";
+      case "restaurant": return "🍽️";
+      case "boutique": return "🛍️";
+      default: return "🏪";
+    }
+  }
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: 8, maxWidth: 260 }}>
+      {/* Header */}
+      <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid #f3f4f6" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+          <Route style={{ width: 12, height: 12, color: "#059669" }} />
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#111827" }}>{route.intent}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, color: "#6b7280", padding: "2px 6px", borderRadius: 10, background: "#f3f4f6" }}>
+            {route.merchants.length} stops
+          </span>
+          <span style={{ fontSize: 9, color: "#6b7280", padding: "2px 6px", borderRadius: 10, background: "#f3f4f6" }}>
+            {route.totalDistanceKm}km · ~{route.estimatedWalkMinutes}min
+          </span>
+          {verified.length > 0 && (
+            <span style={{ fontSize: 9, color: "#059669", padding: "2px 6px", borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              {verified.length} Shopify verified
+            </span>
+          )}
+          {events.length > 0 && (
+            <span style={{ fontSize: 9, color: "#7c3aed", padding: "2px 6px", borderRadius: 10, background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
+              {events.length} event{events.length > 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 9, color: "#9ca3af", margin: "4px 0 0", lineHeight: 1.4 }}>
+          📍 {route.resolvedLocation.name.split(",")[0]}
+        </p>
+      </div>
+
+      {/* Merchant list (top 5, expandable) */}
+      <div style={{ padding: "6px 0" }}>
+        {(expanded ? route.merchants : route.merchants.slice(0, 4)).map((m, i) => (
+          <div key={m.placeId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", borderBottom: i < route.merchants.length - 1 ? "1px solid #f9fafb" : "none" }}>
+            <span style={{ fontSize: 12, flexShrink: 0 }}>{m.isEvent ? "🎪" : typeEmoji(m.type)}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
+              <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>{m.distanceFromStartKm}km from start</p>
+            </div>
+            {m.shopifyStatus === "verified" && (
+              <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <CheckCircle2 style={{ width: 8, height: 8, color: "#059669" }} />
+              </div>
+            )}
+          </div>
+        ))}
+        {route.merchants.length > 4 && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            style={{ width: "100%", padding: "6px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}
+          >
+            {expanded ? "Show less ↑" : `+${route.merchants.length - 4} more stops ↓`}
+          </button>
+        )}
+      </div>
+
+      {/* Footer CTA */}
+      <div style={{ padding: "8px 12px", borderTop: "1px solid #f3f4f6", background: "#fafafa" }}>
+        <p style={{ fontSize: 9, color: "#6b7280", margin: "0 0 6px", lineHeight: 1.4 }}>
+          Route loaded on map ↗ · Shopify checkout on any verified stop
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismiss: () => void }) {
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
@@ -337,6 +499,8 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
         {msg.journeyCard && onStart && routeContext && <JourneyStartCard routeContext={routeContext} onStart={onStart} />}
         {msg.merchantCard && <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />}
         {msg.ghostMerchantCard && <UndiscoveredMerchantCard merchant={msg.ghostMerchantCard} />}
+        {msg.discoveryLoadingCard && <DiscoveryLoadingCard intent={msg.discoveryLoadingCard.intent} city={msg.discoveryLoadingCard.city} />}
+        {msg.discoveryResultCard && <DiscoveryResultCard route={msg.discoveryResultCard} />}
       </div>
     </div>
   );
@@ -364,6 +528,7 @@ export function AiChat({
   merchants, routeContext, journeyProgress, journeyStarted,
   mcpEnabled, onMcpEnable, onRouteRequest, onStartJourney,
   userPosition, onMerchantFocus,
+  onDiscoveryRequest, discoveryRoute, discoveryLoading,
 }: AiChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
@@ -374,6 +539,8 @@ export function AiChat({
   const abortRef = useRef<AbortController | null>(null);
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
   const prevRouteRef = useRef<RouteContext | null>(null);
+  const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
+  const pendingDiscoveryIntentRef = useRef<{ intent: string; city?: string } | null>(null);
 
   useEffect(() => {
     if (messages.length > messageCountRef.current) {
@@ -519,10 +686,82 @@ export function AiChat({
     ]);
   }, []);
 
+  // Discovery route arrived → replace loading card with result card
+  useEffect(() => {
+    if (!discoveryRoute || discoveryRoute === prevDiscoveryRef.current) return;
+    prevDiscoveryRef.current = discoveryRoute;
+    const intent = pendingDiscoveryIntentRef.current;
+
+    setMessages((prev) => {
+      // Replace the loading card (if present) with the result card
+      const idx = [...prev].reverse().findIndex((m) => m.discoveryLoadingCard);
+      if (idx === -1) {
+        // No loading card — append result directly
+        return [
+          ...prev,
+          {
+            id: `dr-${Date.now()}`,
+            role: "assistant" as const,
+            content: `Found ${discoveryRoute.merchants.length} stops for your ${intent?.intent ?? discoveryRoute.intent} route — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
+            timestamp: new Date(),
+            skipSources: true,
+          },
+          {
+            id: `dr-card-${Date.now()}`,
+            role: "assistant" as const,
+            content: "",
+            timestamp: new Date(),
+            discoveryResultCard: discoveryRoute as DiscoveryRouteData,
+            skipSources: true,
+          },
+        ];
+      }
+      const realIdx = prev.length - 1 - idx;
+      const updated = [...prev];
+      updated[realIdx] = {
+        ...updated[realIdx],
+        discoveryLoadingCard: undefined,
+        content: `Found ${discoveryRoute.merchants.length} stops for your ${intent?.intent ?? discoveryRoute.intent} — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
+        skipSources: true,
+      };
+      updated.splice(realIdx + 1, 0, {
+        id: `dr-card-${Date.now()}`,
+        role: "assistant" as const,
+        content: "",
+        timestamp: new Date(),
+        discoveryResultCard: discoveryRoute as DiscoveryRouteData,
+        skipSources: true,
+      });
+      return updated;
+    });
+  }, [discoveryRoute]);
+
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || isStreaming) return;
     setInput("");
+
+    // Check for discovery intent first
+    const discovery = detectDiscoveryIntent(content);
+    if (discovery && onDiscoveryRequest) {
+      pendingDiscoveryIntentRef.current = discovery;
+      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
+      const loadingId = `dl-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        {
+          id: loadingId,
+          role: "assistant" as const,
+          content: "",
+          timestamp: new Date(),
+          discoveryLoadingCard: { intent: discovery.intent, city: discovery.city },
+          skipSources: true,
+        },
+      ]);
+      onDiscoveryRequest(discovery.intent, discovery.city);
+      return;
+    }
 
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);

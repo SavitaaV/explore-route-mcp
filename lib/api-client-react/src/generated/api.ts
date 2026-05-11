@@ -22,6 +22,7 @@ import type {
   AnthropicError,
   AnthropicMessage,
   CreateAnthropicConversationBody,
+  DiscoveryRoute,
   ErrorResponse,
   GetMerchantGraphParams,
   GetMerchantsParams,
@@ -32,6 +33,7 @@ import type {
   MerchantCard,
   MerchantCardRequest,
   MerchantGraph,
+  PlanDiscoveryRouteParams,
   ScenicRoute,
   SendAnthropicMessageBody,
 } from "./api.schemas";
@@ -483,6 +485,103 @@ export function useGetMerchantGraph<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMerchantGraphQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Plan an intent-based discovery route via Google Places + nearest-neighbour ordering
+ */
+export const getPlanDiscoveryRouteUrl = (params: PlanDiscoveryRouteParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/plan-discovery-route?${stringifiedParams}`
+    : `/api/plan-discovery-route`;
+};
+
+export const planDiscoveryRoute = async (
+  params: PlanDiscoveryRouteParams,
+  options?: RequestInit,
+): Promise<DiscoveryRoute> => {
+  return customFetch<DiscoveryRoute>(getPlanDiscoveryRouteUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getPlanDiscoveryRouteQueryKey = (
+  params?: PlanDiscoveryRouteParams,
+) => {
+  return [`/api/plan-discovery-route`, ...(params ? [params] : [])] as const;
+};
+
+export const getPlanDiscoveryRouteQueryOptions = <
+  TData = Awaited<ReturnType<typeof planDiscoveryRoute>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: PlanDiscoveryRouteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof planDiscoveryRoute>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getPlanDiscoveryRouteQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof planDiscoveryRoute>>
+  > = ({ signal }) => planDiscoveryRoute(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof planDiscoveryRoute>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type PlanDiscoveryRouteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof planDiscoveryRoute>>
+>;
+export type PlanDiscoveryRouteQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Plan an intent-based discovery route via Google Places + nearest-neighbour ordering
+ */
+
+export function usePlanDiscoveryRoute<
+  TData = Awaited<ReturnType<typeof planDiscoveryRoute>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params: PlanDiscoveryRouteParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof planDiscoveryRoute>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getPlanDiscoveryRouteQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

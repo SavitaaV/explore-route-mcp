@@ -200,6 +200,64 @@ export const GetMerchantGraphResponse = zod.object({
 });
 
 /**
+ * @summary Plan an intent-based discovery route via Google Places + nearest-neighbour ordering
+ */
+export const PlanDiscoveryRouteQueryParams = zod.object({
+  intent: zod.coerce
+    .string()
+    .describe(
+      'Discovery intent (e.g. \"wine tour\", \"farmers market\", \"artisan shops\")',
+    ),
+  city: zod.coerce
+    .string()
+    .optional()
+    .describe('Ontario city name to geocode (e.g. \"Niagara-on-the-Lake\")'),
+  lat: zod.coerce
+    .number()
+    .optional()
+    .describe("Latitude of search centre (alternative to city)"),
+  lng: zod.coerce
+    .number()
+    .optional()
+    .describe("Longitude of search centre (alternative to city)"),
+  radius: zod.coerce
+    .number()
+    .optional()
+    .describe("Search radius in metres (default 2000)"),
+});
+
+export const PlanDiscoveryRouteResponse = zod.object({
+  intent: zod.string(),
+  resolvedLocation: zod.object({
+    lat: zod.number(),
+    lng: zod.number(),
+    name: zod.string(),
+  }),
+  merchants: zod.array(
+    zod.object({
+      placeId: zod.string(),
+      name: zod.string(),
+      type: zod.string(),
+      lat: zod.number(),
+      lng: zod.number(),
+      vicinity: zod.string(),
+      rating: zod.number().nullable(),
+      userRatingsTotal: zod.number(),
+      distanceFromStartKm: zod.number(),
+      shopifyStatus: zod.enum(["verified", "ghost"]),
+      isEvent: zod.boolean(),
+      chainTier: zod.string(),
+      openNow: zod.boolean().nullable(),
+      photoUrl: zod.string().nullish(),
+      checkoutUrl: zod.string().nullish(),
+    }),
+  ),
+  totalDistanceKm: zod.number(),
+  estimatedWalkMinutes: zod.number(),
+  source: zod.enum(["google", "mock"]),
+});
+
+/**
  * @summary List available MCP tools
  */
 export const GetMcpToolsResponseItem = zod.object({

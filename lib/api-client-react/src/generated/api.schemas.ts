@@ -187,6 +187,59 @@ export interface AnthropicError {
   error: string;
 }
 
+export type DiscoveryMerchantShopifyStatus =
+  (typeof DiscoveryMerchantShopifyStatus)[keyof typeof DiscoveryMerchantShopifyStatus];
+
+export const DiscoveryMerchantShopifyStatus = {
+  verified: "verified",
+  ghost: "ghost",
+} as const;
+
+export interface DiscoveryMerchant {
+  placeId: string;
+  name: string;
+  type: string;
+  lat: number;
+  lng: number;
+  vicinity: string;
+  /** @nullable */
+  rating: number | null;
+  userRatingsTotal: number;
+  distanceFromStartKm: number;
+  shopifyStatus: DiscoveryMerchantShopifyStatus;
+  isEvent: boolean;
+  chainTier: string;
+  /** @nullable */
+  openNow: boolean | null;
+  /** @nullable */
+  photoUrl?: string | null;
+  /** @nullable */
+  checkoutUrl?: string | null;
+}
+
+export type DiscoveryRouteResolvedLocation = {
+  lat: number;
+  lng: number;
+  name: string;
+};
+
+export type DiscoveryRouteSource =
+  (typeof DiscoveryRouteSource)[keyof typeof DiscoveryRouteSource];
+
+export const DiscoveryRouteSource = {
+  google: "google",
+  mock: "mock",
+} as const;
+
+export interface DiscoveryRoute {
+  intent: string;
+  resolvedLocation: DiscoveryRouteResolvedLocation;
+  merchants: DiscoveryMerchant[];
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+  source: DiscoveryRouteSource;
+}
+
 export type GetScenicRouteParams = {
   origin: string;
   destination: string;
@@ -212,4 +265,27 @@ export type GetMerchantGraphParams = {
    * Comma-separated merchant type filter
    */
   merchantTypes?: string;
+};
+
+export type PlanDiscoveryRouteParams = {
+  /**
+   * Discovery intent (e.g. "wine tour", "farmers market", "artisan shops")
+   */
+  intent: string;
+  /**
+   * Ontario city name to geocode (e.g. "Niagara-on-the-Lake")
+   */
+  city?: string;
+  /**
+   * Latitude of search centre (alternative to city)
+   */
+  lat?: number;
+  /**
+   * Longitude of search centre (alternative to city)
+   */
+  lng?: number;
+  /**
+   * Search radius in metres (default 2000)
+   */
+  radius?: number;
 };
