@@ -779,19 +779,34 @@ const PLACES_SEARCH_TYPES = [
 // Enterprise chain blocklist — names or name fragments that identify national /
 // multinational chains to exclude from the local commerce graph.
 // ─────────────────────────────────────────────────────────────────────────────
+// matchesBrand: safe brand-name matching that avoids false positives from
+// substring collisions on short terms (e.g. "bay" inside "Bayfield Bakery").
+//
+// • Multi-word terms (contain spaces) use plain substring match — multi-word
+//   phrases are rarely ambiguous ("the bay" won't appear inside "Bayswater Café").
+// • Single-word terms require an exact token match. The business name is
+//   tokenized on whitespace, hyphens, apostrophes, and common punctuation so
+//   "Shelley's" → ["shelley","s"] (won't match "shell"), and
+//   "Bayfield" → ["bayfield"] (won't match "bay").
+function matchesBrand(lowerName: string, term: string): boolean {
+  if (term.includes(" ")) return lowerName.includes(term);
+  const tokens = lowerName.split(/[\s\-''&,.()/]+/).filter(Boolean);
+  return tokens.includes(term);
+}
+
 const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
   // Grocery / supermarket chains (Loblaw & subsidiaries)
   "loblaws", "loblaw", "no frills", "nofrills", "real canadian superstore", "valu-mart", "fortinos",
-  "zehrs", "valumart", "superstore", "maxi ", "maxi store", "maxi supermarche", "provigo",
+  "zehrs", "valumart", "superstore", "maxi store", "maxi supermarche", "provigo",
   // Metro & subsidiaries
   "metro supermarché", "metro grocery", "food basics", "super c",
   // Other grocery
   "walmart", "costco", "sobeys", "freshco", "iga grocery", "giant tiger", "farm boy",
-  "whole foods", "trader joe", "save-on-foods", "buy-low foods",
+  "whole foods", "trader joe's", "save-on-foods", "buy-low foods",
   // Pharmacy chains
   "shoppers drug mart", "rexall", "london drugs", "pharmasave", "guardian pharmacy",
   // Fast food / QSR
-  "tim hortons", "mcdonald", "subway", "harvey's", "wendy's", "burger king",
+  "tim hortons", "mcdonald's", "subway", "harvey's", "wendy's", "burger king",
   "kfc", "pizza pizza", "pizza hut", "domino's", "a&w", "dairy queen",
   "popeyes", "five guys", "chipotle", "taco bell", "dunkin",
   // Coffee chains
@@ -801,29 +816,28 @@ const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
   // Home improvement & hardware
   "canadian tire", "home depot", "rona", "home hardware", "lowe's", "lowes",
   "true value", "princess auto",
-  // Department / big-box
-  "winners", "homesense", "marshalls", "the bay", "hudson's bay", "bay",
+  // Department / big-box — use full phrases to avoid short-fragment collisions
+  "winners", "homesense", "marshalls", "hudson's bay", "the bay",
   "sears", "target", "dollarama", "dollar tree", "dollar general",
   "value village", "goodwill",
-  // Gas / convenience
+  // Gas / convenience — "shell" and "esso" as tokens are fine; "petro-canada" is multi-word
   "petro-canada", "shell", "esso", "ultramar", "circle k", "couche-tard",
   "mac's convenience", "7-eleven",
-  // Telecom retail
+  // Telecom retail — "bell" and "rogers" are distinctive enough as tokens
   "bell", "rogers", "telus", "freedom mobile", "public mobile",
   // Banks / financial
   "td bank", "rbc", "bmo", "scotiabank", "cibc", "national bank",
   "tangerine", "hsbc", "desjardins",
   // Large apparel chains
   "h&m", "zara", "gap", "old navy", "banana republic", "forever 21",
-  "uniqlo", "sport chek", "mark's", "reitmans", "thyme maternity",
+  "uniqlo", "sport chek", "reitmans", "thyme maternity",
   "addition elle", "penningtons", "le château",
   // Other large chains
   "best buy", "the source", "future shop", "staples", "business depot",
   "chapters", "indigo", "coles bookstore",
   "aldo", "shoe company", "sport expert",
-  // Large-format global brands that are Shopify-verified but not small/local
-  // (listed here so classifyChainTier starts them as "enterprise" — verifyAndPromote
-  //  will promote them to "regional" only when their Shopify verification is confirmed)
+  // Large-format global brand kept here so classifyChainTier starts it as
+  // "enterprise"; verifyAndPromote() upgrades it to "regional" if Shopify-verified.
   "ikea",
 ];
 
@@ -836,7 +850,7 @@ const ENTERPRISE_CHAIN_ALLOWLIST: string[] = ["ikea"];
 const NATIONAL_CHAIN_LIST: string[] = [
   "holt renfrew", "roots canada", "roots clothing", "lush cosmetics", "lush fresh",
   "arc'teryx", "marks work", "l'occitane", "anthropologie", "williams-sonoma",
-  "pottery barn", "restoration hardware", "rh ", "crate and barrel", "west elm",
+  "pottery barn", "restoration hardware", "rh", "crate and barrel", "west elm",
   "indochino", "frank and oak", "aritzia", "simons", "ten thousand villages",
   "highland farms", "summerhill market", "pusateri's", "longo's", "longos",
 ];
@@ -863,8 +877,8 @@ const ENTERPRISE_PLACE_TYPES = new Set([
 // Allowlisted brands pass through so they can be Shopify-verified and promoted later.
 function isEnterpriseChain(name: string): boolean {
   const lower = name.toLowerCase();
-  if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return false;
-  return ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b));
+  if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => matchesBrand(lower, a))) return false;
+  return ENTERPRISE_CHAIN_BLOCKLIST.some((b) => matchesBrand(lower, b));
 }
 
 // classifyChainTier: assigns an initial tier using name lists AND Google Place types.
@@ -875,13 +889,13 @@ function isEnterpriseChain(name: string): boolean {
 function classifyChainTier(name: string, types: string[]): "local" | "regional" | "national" | "enterprise" {
   const lower = name.toLowerCase();
   // Blocklist (includes "ikea") → enterprise; verifyAndPromote() handles allowlist promotion
-  if (ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b))) return "enterprise";
+  if (ENTERPRISE_CHAIN_BLOCKLIST.some((b) => matchesBrand(lower, b))) return "enterprise";
   // Large-format type signals → treat as enterprise even if name not in list
   if (types.some((t) => ENTERPRISE_PLACE_TYPES.has(t))) return "enterprise";
   // National brands → need verification
-  if (NATIONAL_CHAIN_LIST.some((b) => lower.includes(b))) return "national";
+  if (NATIONAL_CHAIN_LIST.some((b) => matchesBrand(lower, b))) return "national";
   // Known Ontario regional brands → always shown
-  if (REGIONAL_BRAND_LIST.some((b) => lower.includes(b))) return "regional";
+  if (REGIONAL_BRAND_LIST.some((b) => matchesBrand(lower, b))) return "regional";
   return "local";
 }
 
@@ -892,7 +906,7 @@ function verifyAndPromote(
 ): void {
   if (node.chainTier === "enterprise" && node.shopifyStatus === "verified") {
     const lower = node.name.toLowerCase();
-    if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) {
+    if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => matchesBrand(lower, a))) {
       node.chainTier = "regional";
     }
   }
