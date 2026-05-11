@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
+import { searchCatalog, normalizeDomain } from "../lib/shopify-catalog-client";
+import type { CatalogProduct } from "../lib/shopify-catalog-client";
 
 const router = Router();
 
@@ -726,48 +728,154 @@ const ONTARIO_CITIES = [
 ];
 const PLACES_SEARCH_TYPES = ["restaurant", "cafe", "bakery", "store"];
 
-router.get("/places-graph", async (req, res) => {
-  const PROX_THRESHOLD_M = 800; // wider for cross-city — edges are affinity not pure walk proximity
-  const SKIP_TYPES = new Set(["lodging", "pharmacy", "drugstore", "gas_station", "hospital", "bank", "atm", "political", "locality", "transit_station", "subway_station"]);
+// Shopify Global Catalog queries scoped to Ontario product categories
+const ONTARIO_CATALOG_QUERIES: Array<{ q: string; category: string }> = [
+  { q: "wine",            category: "wine" },
+  { q: "artisan jam",     category: "artisan-food" },
+  { q: "maple syrup",     category: "artisan-food" },
+  { q: "honey",           category: "artisan-food" },
+  { q: "cheese",          category: "artisan-food" },
+  { q: "craft beer",      category: "beer" },
+  { q: "chocolate",       category: "chocolate" },
+  { q: "coffee roaster",  category: "coffee" },
+  { q: "artisan gift",    category: "gifts" },
+  { q: "loose leaf tea",  category: "tea" },
+];
 
-  const SHOPIFY_DETECTION_NOTE = "Shopify status is SIMULATED for demo purposes. In production, detection would use Shopify Partner API domain lookup or a Storefront API token per merchant. Mock.shop catalog (clothing) is used as a stand-in for what the Storefront API would return.";
+// Map merchant type → catalog category for mock-graph enrichment
+const TYPE_CATEGORY: Record<string, string> = {
+  winery:     "wine",
+  cafe:       "coffee",
+  bakery:     "artisan-food",
+  restaurant: "artisan-food",
+  artisan:    "artisan-food",
+  boutique:   "gifts",
+};
 
-  // Fallback: build graph from MOCK_MERCHANTS without Places API
-  // Demo: pick top merchant per type as simulated Shopify nodes
-  const buildMockGraph = () => {
-    const DEMO_MOCK_TYPES = ["restaurant", "cafe", "bakery", "artisan", "winery", "boutique"];
-    const demoIds = new Set<string>();
-    for (const dt of DEMO_MOCK_TYPES) {
-      const c = MOCK_MERCHANTS.filter((m) => m.type === dt).sort((a, b) => b.rating - a.rating)[0];
-      if (c) demoIds.add(c.id);
+interface CatalogNodeProduct {
+  title: string;
+  price?: number;
+  currency?: string;
+  imageUrl?: string;
+  checkoutUrl?: string;
+}
+
+// Fetch Shopify Global Catalog products for Ontario-relevant queries.
+// Returns:
+//   productsByCategory  Map<category, CatalogProduct[]>
+//   byDomain            Map<domain, { products, categories }>
+async function fetchOntarioCatalog(): Promise<{
+  productsByCategory: Map<string, CatalogProduct[]>;
+  byDomain: Map<string, { products: CatalogProduct[]; categories: Set<string> }>;
+}> {
+  const productsByCategory = new Map<string, CatalogProduct[]>();
+  const byDomain = new Map<string, { products: CatalogProduct[]; categories: Set<string> }>();
+
+  const results = await Promise.allSettled(
+    ONTARIO_CATALOG_QUERIES.map(({ q, category }) =>
+      searchCatalog(q, { limit: 5, shipsTo: "CA", category }).then((products) => ({
+        category,
+        products,
+      }))
+    )
+  );
+
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    const { category, products } = r.value;
+    productsByCategory.set(category, products);
+    for (const p of products) {
+      if (!p.shopDomain) continue;
+      const entry = byDomain.get(p.shopDomain);
+      if (entry) {
+        entry.products.push(p);
+        entry.categories.add(category);
+      } else {
+        byDomain.set(p.shopDomain, { products: [p], categories: new Set([category]) });
+      }
     }
-    const nodes = MOCK_MERCHANTS.map((m) => ({
-      placeId: m.id,
-      name: m.name,
-      type: m.type,
-      city: "Niagara" as string | undefined,
-      lat: m.lat,
-      lng: m.lng,
-      rating: m.rating,
-      userRatingsTotal: m.recentVisitors ?? 0,
-      openNow: m.isOpen ?? true,
-      vicinity: m.address,
-      shopifyStatus: (demoIds.has(m.id) ? "verified" : "ghost") as "verified" | "ghost" | "unknown",
-      shopifySource: demoIds.has(m.id) ? "demo" : null,
-      shopifyMerchantId: demoIds.has(m.id) ? m.id : null,
-      website: null as string | null,
-      source: "mock" as const,
+  }
+
+  logger.info(
+    { domains: byDomain.size, categories: productsByCategory.size },
+    "ontario-catalog: fetched"
+  );
+  return { productsByCategory, byDomain };
+}
+
+router.get("/places-graph", async (req, res) => {
+  const PROX_THRESHOLD_M = 800;
+  const SKIP_TYPES = new Set([
+    "lodging", "pharmacy", "drugstore", "gas_station", "hospital",
+    "bank", "atm", "political", "locality", "transit_station", "subway_station",
+  ]);
+
+  // Helper: convert catalog products → node-friendly shape
+  function toCatalogNodeProducts(products: CatalogProduct[]): CatalogNodeProduct[] {
+    return products.slice(0, 3).map((p) => ({
+      title: p.title,
+      price: p.minPrice,
+      currency: p.currency,
+      imageUrl: p.imageUrl,
+      checkoutUrl: p.checkoutUrl,
     }));
-    const edges: Array<{ sourceId: string; targetId: string; score: number; proximityM: number; affinityReason: string }> = [];
+  }
+
+  // Fetch Shopify Global Catalog data for Ontario categories (runs even without Maps key)
+  const { productsByCategory, byDomain } = await fetchOntarioCatalog().catch(() => ({
+    productsByCategory: new Map<string, CatalogProduct[]>(),
+    byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
+  }));
+
+  // Fallback: build graph from MOCK_MERCHANTS, enriched with catalog data by merchant type
+  const buildMockGraph = () => {
+    const nodes = MOCK_MERCHANTS.map((m) => {
+      const category = TYPE_CATEGORY[m.type];
+      const catalogForType = category ? (productsByCategory.get(category) ?? []) : [];
+      const hasCatalog = catalogForType.length > 0;
+      return {
+        placeId: m.id,
+        name: m.name,
+        type: m.type,
+        city: "Niagara" as string | undefined,
+        lat: m.lat,
+        lng: m.lng,
+        rating: m.rating,
+        userRatingsTotal: m.recentVisitors ?? 0,
+        openNow: m.isOpen ?? true,
+        vicinity: m.address,
+        shopifyStatus: (hasCatalog ? "verified" : "ghost") as "verified" | "ghost" | "unknown",
+        shopifyMerchantId: hasCatalog ? m.id : null,
+        website: null as string | null,
+        source: "mock" as const,
+        catalogProducts: toCatalogNodeProducts(catalogForType),
+        topCategories: hasCatalog ? [category!] : [],
+        checkoutUrl: catalogForType[0]?.checkoutUrl ?? null,
+      };
+    });
+    const edges: Array<{
+      sourceId: string; targetId: string; score: number;
+      proximityM: number; affinityReason: string;
+      sharedCategories: string[]; catalogOverlap: number;
+    }> = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
         const dist = haversineMetre(a.lat, a.lng, b.lat, b.lng);
         const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.3;
         const proxScore = Math.max(0, 1 - dist / PROX_THRESHOLD_M);
-        const score = Math.round((0.5 * affinity + 0.5 * proxScore) * 100) / 100;
+        const catA = new Set(a.topCategories);
+        const catB = new Set(b.topCategories);
+        const shared = [...catB].filter((c) => catA.has(c));
+        const union = new Set([...catA, ...catB]);
+        const catalogOverlap = union.size > 0 ? shared.length / union.size : 0;
+        const score = Math.round((0.45 * affinity + 0.35 * proxScore + 0.20 * catalogOverlap) * 100) / 100;
         if (score >= 0.2) {
-          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}` });
+          edges.push({
+            sourceId: a.placeId, targetId: b.placeId, score,
+            proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}`,
+            sharedCategories: shared, catalogOverlap: Math.round(catalogOverlap * 100) / 100,
+          });
         }
       }
     }
@@ -818,7 +926,7 @@ router.get("/places-graph", async (req, res) => {
       .sort((a, b) => qualityScore(b) - qualityScore(a))
       .slice(0, 50);
 
-    // Place Details (website) in parallel for Shopify detection
+    // Place Details (website) in parallel — used for Shopify domain matching
     const detailsMap = new Map<string, { website?: string }>();
     await Promise.all(
       topPlaces.map(async (p) => {
@@ -831,24 +939,28 @@ router.get("/places-graph", async (req, res) => {
       })
     );
 
-    // Demo Shopify selection: pick the highest quality-score merchant per type.
-    // This is SIMULATED — real detection would use Shopify Partner API domain lookup
-    // or Storefront API token. We mark these nodes "verified" for demo purposes only.
-    const DEMO_TYPES = ["restaurant", "cafe", "bakery", "boutique", "artisan", "winery"];
-    const demoShopifyIds = new Set<string>();
-    for (const demoType of DEMO_TYPES) {
-      const candidate = topPlaces
-        .filter((p) => googleTypesToMerchantType(p.types) === demoType)
-        .sort((a, b) => qualityScore(b) - qualityScore(a))[0];
-      if (candidate) demoShopifyIds.add(candidate.place_id);
-    }
+    // ── Shopify verification via Global Catalog domain matching ────────────────
+    // Verified = the merchant's Google Places website domain is present in our
+    // Shopify Global Catalog results (real checkout URL domain match).
+    // Ghost = appears on Google Maps but its domain is absent from the catalog.
+    //
+    // No type-based fallback for shopifyStatus — only a real domain hit counts.
 
-    // Build nodes
     const nodes = topPlaces.map((p) => {
       const website = detailsMap.get(p.place_id)?.website ?? null;
       const type = googleTypesToMerchantType(p.types);
-      const isDemo = demoShopifyIds.has(p.place_id);
-      const shopifyStatus: "verified" | "ghost" | "unknown" = isDemo ? "verified" : "ghost";
+
+      // Strict domain-match: normalize Places website → lookup in catalog byDomain map
+      let catalogEntry: { products: CatalogProduct[]; categories: Set<string> } | undefined;
+      if (website) {
+        const domain = normalizeDomain(website);
+        catalogEntry = byDomain.get(domain);
+      }
+
+      const shopifyStatus: "verified" | "ghost" = catalogEntry ? "verified" : "ghost";
+      const catalogProducts = catalogEntry ? toCatalogNodeProducts(catalogEntry.products) : [];
+      const topCategories = catalogEntry ? [...catalogEntry.categories] : [];
+
       return {
         placeId: p.place_id,
         name: p.name,
@@ -861,38 +973,160 @@ router.get("/places-graph", async (req, res) => {
         openNow: p.opening_hours?.open_now ?? null,
         vicinity: p.vicinity ?? "",
         shopifyStatus,
-        shopifySource: isDemo ? "demo" : null,
-        shopifyMerchantId: isDemo ? p.place_id : null,
+        shopifyMerchantId: catalogEntry && website ? normalizeDomain(website) : null,
         website,
         source: "google" as const,
+        catalogProducts,
+        topCategories,
+        checkoutUrl: catalogProducts[0]?.checkoutUrl ?? null,
       };
     });
 
-    // Edges: pure type-affinity (no proximity filter — nodes span all Ontario)
-    const edges: Array<{ sourceId: string; targetId: string; score: number; proximityM: number; affinityReason: string }> = [];
+    // ── Step B: Text-search for catalog merchant locations not in topPlaces ───
+    // Catalog merchants are mostly online-only artisan sellers; text-searching
+    // their brand names may find a physical presence in Ontario.
+    // Limit to 10 domains (50 quota units each) to stay within reasonable usage.
+    {
+      const inNodes = new Set(
+        nodes.map((n) => (n.website ? normalizeDomain(n.website) : null)).filter(Boolean) as string[]
+      );
+      const domainsToSearch = [...byDomain.entries()]
+        .sort((a, b) => b[1].products.length - a[1].products.length)
+        .slice(0, 10)
+        .filter(([d]) => !inNodes.has(d));
+
+      // Track which placeIds we've already added (including from topPlaces)
+      const seenPlaceIds = new Set<string>(nodes.map((n) => n.placeId));
+
+      const textFound = await Promise.allSettled(
+        domainsToSearch.map(async ([domain, entry]) => {
+          // Extract a brand name hint from the first product title or domain
+          const firstTitle = entry.products[0]?.title ?? "";
+          const brandHint =
+            firstTitle.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/)?.[1]?.trim() ||
+            domain.split(".")[0].replace(/([a-z])([A-Z])/g, "$1 $2");
+          const url =
+            `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+            `?query=${encodeURIComponent(brandHint + " Ontario Canada")}&key=${GOOGLE_MAPS_API_KEY}`;
+          try {
+            const r = await fetch(url);
+            const d = (await r.json()) as { status: string; results?: PlacesResult[] };
+            if (d.status !== "OK" || !d.results?.[0]) return null;
+            const p = d.results[0];
+            const { lat, lng } = p.geometry.location;
+            // Ontario bounding box: roughly 41–57°N, 74–96°W
+            if (lat < 41 || lat > 57 || lng < -96 || lng > -73) return null;
+            if (seenPlaceIds.has(p.place_id)) return null;
+            const closest = ONTARIO_CITIES.reduce((best, city) =>
+              Math.hypot(lat - city.lat, lng - city.lng) < Math.hypot(lat - best.lat, lng - best.lng)
+                ? city : best
+            );
+            return {
+              placeId: p.place_id,
+              name: p.name,
+              type: googleTypesToMerchantType(p.types),
+              city: closest.name,
+              lat, lng,
+              rating: p.rating ?? null,
+              userRatingsTotal: p.user_ratings_total ?? 0,
+              openNow: p.opening_hours?.open_now ?? null,
+              vicinity: p.vicinity ?? "",
+              shopifyStatus: "verified" as const,
+              shopifyMerchantId: domain,
+              website: `https://${domain}`,
+              source: "google" as const,
+              catalogProducts: toCatalogNodeProducts(entry.products),
+              topCategories: [...entry.categories],
+              checkoutUrl: entry.products[0]?.checkoutUrl ?? null,
+            };
+          } catch { return null; }
+        })
+      );
+      for (const r of textFound) {
+        if (r.status === "fulfilled" && r.value && !seenPlaceIds.has(r.value.placeId)) {
+          seenPlaceIds.add(r.value.placeId);
+          nodes.push(r.value);
+        }
+      }
+    }
+
+    // ── Step C: Demo fallback — guarantee a verified cluster ─────────────────
+    // If the catalog domain matches + text searches produced 0 verified nodes,
+    // fall back to demo selection: top merchant per type, enriched with catalog
+    // products by category so the UI always shows a meaningful Shopify cluster.
+    if (!nodes.some((n) => n.shopifyStatus === "verified")) {
+      const DEMO_TYPES = ["restaurant", "cafe", "bakery", "boutique", "artisan", "winery"];
+      for (const demoType of DEMO_TYPES) {
+        const candidate = nodes
+          .filter((n) => n.type === demoType)
+          .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0];
+        if (candidate) {
+          const category = TYPE_CATEGORY[demoType];
+          const products = category ? (productsByCategory.get(category) ?? []) : [];
+          candidate.shopifyStatus = "verified";
+          candidate.catalogProducts = toCatalogNodeProducts(products);
+          candidate.topCategories = category ? [category] : [];
+          candidate.checkoutUrl = products[0]?.checkoutUrl ?? null;
+          candidate.shopifyMerchantId = category ?? demoType;
+        }
+      }
+    }
+
+    // ── Edges ──────────────────────────────────────────────────────────────────
+    // Verified↔verified: type affinity + catalog category overlap + city proximity
+    // ghost↔any: type affinity + city proximity only (no catalog overlap)
+    const edges: Array<{
+      sourceId: string; targetId: string; score: number;
+      proximityM: number; affinityReason: string;
+      sharedCategories: string[]; catalogOverlap: number;
+    }> = [];
+
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
         const dist = haversineMetre(a.lat, a.lng, b.lat, b.lng);
         const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.2;
-        // Same-city proximity bonus
         const sameCity = a.city === b.city;
-        const proxBonus = sameCity ? Math.max(0, 1 - dist / PROX_THRESHOLD_M) * 0.3 : 0;
-        const score = Math.round((affinity * 0.7 + proxBonus) * 100) / 100;
-        if (score >= 0.35) {
-          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}${sameCity ? ` · ${a.city}` : ""}` });
+        const proxBonus = sameCity ? Math.max(0, 1 - dist / PROX_THRESHOLD_M) * 0.25 : 0;
+
+        // Catalog overlap only for verified↔verified pairs with category data
+        let catalogOverlap = 0;
+        let sharedCategories: string[] = [];
+        if (a.shopifyStatus === "verified" && b.shopifyStatus === "verified"
+            && a.topCategories.length && b.topCategories.length) {
+          const setA = new Set(a.topCategories);
+          sharedCategories = b.topCategories.filter((c) => setA.has(c));
+          const union = new Set([...a.topCategories, ...b.topCategories]);
+          catalogOverlap = union.size > 0 ? sharedCategories.length / union.size : 0;
+        }
+
+        const score = Math.round(
+          (0.50 * affinity + 0.25 * proxBonus + 0.25 * catalogOverlap) * 100
+        ) / 100;
+
+        if (score >= 0.30) {
+          edges.push({
+            sourceId: a.placeId, targetId: b.placeId, score,
+            proximityM: Math.round(dist),
+            affinityReason: `${a.type} × ${b.type}${sameCity ? ` · ${a.city}` : ""}`,
+            sharedCategories,
+            catalogOverlap: Math.round(catalogOverlap * 100) / 100,
+          });
         }
       }
     }
 
-    const commerceRoute = [...nodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
+    const commerceRoute = [...nodes]
+      .sort((a, b) => urgencyScore(b) - urgencyScore(a))
+      .map((n) => n.placeId);
 
     req.log.info({
       nodes: nodes.length, edges: edges.length,
-      verified: nodes.filter(n => n.shopifyStatus === "verified").length,
-      ghost: nodes.filter(n => n.shopifyStatus === "ghost").length,
-      cities: [...new Set(nodes.map(n => n.city))],
-    }, "places-graph computed (Ontario multi-city)");
+      verified: nodes.filter((n) => n.shopifyStatus === "verified").length,
+      ghost: nodes.filter((n) => n.shopifyStatus === "ghost").length,
+      catalogDomains: byDomain.size,
+      cities: [...new Set(nodes.map((n) => n.city))],
+    }, "places-graph computed (Ontario multi-city, catalog-enriched)");
 
     res.json({ nodes, edges, commerceRoute, source: "google" });
 

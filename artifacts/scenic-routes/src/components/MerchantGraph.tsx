@@ -15,6 +15,14 @@ const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 // ─── API types ────────────────────────────────────────────────────────────────
 
+interface CatalogNodeProduct {
+  title: string;
+  price?: number;
+  currency?: string;
+  imageUrl?: string;
+  checkoutUrl?: string;
+}
+
 interface PlacesNode {
   placeId: string;
   name: string;
@@ -30,6 +38,10 @@ interface PlacesNode {
   shopifyMerchantId: string | null;
   website: string | null;
   source: "google" | "mock";
+  // Shopify Global Catalog enrichment
+  catalogProducts?: CatalogNodeProduct[];
+  topCategories?: string[];
+  checkoutUrl?: string | null;
 }
 
 interface PlacesEdge {
@@ -38,6 +50,8 @@ interface PlacesEdge {
   score: number;
   proximityM: number;
   affinityReason: string;
+  sharedCategories?: string[];
+  catalogOverlap?: number;
 }
 
 interface PlacesGraph {
@@ -785,16 +799,16 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
             const scaleY = sh / GH;
             const px = nx * scaleX;
             const py = ny * scaleY;
-            const tipX = px > sw * 0.65 ? px - 190 : px + 22;
-            const tipY = Math.max(8, Math.min(sh - 220, py - 30));
+            const tipX = px > sw * 0.65 ? px - 210 : px + 22;
+            const tipY = Math.max(8, Math.min(sh - 320, py - 30));
 
             return (
               <div style={{
                 position: "absolute", left: tipX, top: tipY, zIndex: 30,
                 background: "rgba(10,13,18,0.98)", border: `1px solid ${color}44`,
-                borderRadius: 10, padding: "10px 12px", minWidth: 168, maxWidth: 200,
+                borderRadius: 10, padding: "10px 12px", minWidth: 168, maxWidth: 210,
                 boxShadow: `0 8px 28px rgba(0,0,0,0.7), 0 0 0 1px ${color}22`,
-                pointerEvents: "none",
+                pointerEvents: isVerified && node.catalogProducts?.length ? "auto" : "none",
               }}>
                 <p style={{ fontSize: 12, fontWeight: 700, color: "#fff", margin: "0 0 2px", lineHeight: 1.3 }}>
                   {TYPE_EMOJI[node.type] ?? "🏪"} {node.name}
@@ -830,11 +844,54 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
                   </div>
                 )}
 
-                {isVerified && (
+                {isVerified && node.catalogProducts && node.catalogProducts.length > 0 ? (
+                  <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid rgba(52,211,153,0.12)" }}>
+                    <p style={{ fontSize: 7.5, color: "#34d399", fontWeight: 700, margin: "0 0 5px", letterSpacing: 0.3 }}>
+                      🛍 SHOPIFY CATALOG
+                    </p>
+                    {node.catalogProducts.map((p, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+                        {p.imageUrl && (
+                          <img src={p.imageUrl} alt={p.title}
+                            style={{ width: 24, height: 24, borderRadius: 3, objectFit: "cover", flexShrink: 0 }} />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 8, color: "#fff", margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {p.title.length > 22 ? p.title.slice(0, 22) + "…" : p.title}
+                          </p>
+                          {p.price != null && (
+                            <span style={{ fontSize: 7, color: "#34d399" }}>
+                              ${p.price.toFixed(2)} {p.currency ?? "CAD"}
+                            </span>
+                          )}
+                        </div>
+                        {p.checkoutUrl && (
+                          <a href={p.checkoutUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 7, color: "#34d399", fontWeight: 700, textDecoration: "none",
+                              padding: "2px 6px", border: "1px solid rgba(52,211,153,0.35)",
+                              borderRadius: 4, whiteSpace: "nowrap", flexShrink: 0, pointerEvents: "auto" }}>
+                            Buy →
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                    {node.topCategories && node.topCategories.length > 0 && (
+                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
+                        {node.topCategories.map((c) => (
+                          <span key={c} style={{ fontSize: 6.5, padding: "1px 5px", borderRadius: 8,
+                            background: "rgba(52,211,153,0.07)", color: "#34d399",
+                            border: "1px solid rgba(52,211,153,0.18)" }}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : isVerified ? (
                   <p style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
                     Real-time inventory edges. AI agents can query stock, trigger purchase, verify checkout.
                   </p>
-                )}
+                ) : null}
 
                 <div style={{ fontSize: 7.5, color: "rgba(255,255,255,0.25)", marginTop: 6 }}>
                   {node.openNow === true ? "🟢 Open now" : node.openNow === false ? "🔴 Closed" : "Hours unknown"}
