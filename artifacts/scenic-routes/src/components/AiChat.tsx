@@ -214,29 +214,29 @@ function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
 
 function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismiss: () => void }) {
   return (
-    <div style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #bbf7d0", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Zap style={{ width: 16, height: 16, color: "#fff" }} />
+        <div style={{ width: 28, height: 28, borderRadius: 9, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Zap style={{ width: 13, height: 13, color: "#fff" }} />
         </div>
         <div>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "#065f46", margin: 0 }}>Explore Route MCP</p>
-          <p style={{ fontSize: 10, color: "#047857", margin: 0 }}>Agentic commerce · Shopify-verified</p>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#111827", margin: 0 }}>Explore Route MCP</p>
+          <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>Shopify Catalog · NOTL Old Town</p>
         </div>
       </div>
-      <p style={{ fontSize: 11, color: "#065f46", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Allow Claude to access route context and surface Shopify-verified merchants along the NOTL Old Town walking loop via MCP?
+      <p style={{ fontSize: 11, color: "#374151", margin: "0 0 10px", lineHeight: 1.6 }}>
+        Let me index what's along your walk. I'll only say something when the moment's genuinely right — a timing signal, an inventory signal, a story worth stopping for.
       </p>
-      <div style={{ fontSize: 10, color: "#047857", marginBottom: 12, lineHeight: 1.6 }}>
-        ✓ Only Shopify-verified merchants on the route<br />
-        ✓ Inventory confidence scores, real stories<br />
-        ✓ Quiet by default — nudges only when worth it
+      <div style={{ fontSize: 10, color: "#6b7280", marginBottom: 12, lineHeight: 1.7 }}>
+        ✓ Shopify Catalog — verified inventory, real-time<br />
+        ✓ Speaks once per milestone, not a feed<br />
+        ✓ Checkout happens right here in the conversation
       </div>
       <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={onEnable} style={{ flex: 1, padding: "9px 0", borderRadius: 12, background: "linear-gradient(135deg, #059669, #34d399)", color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
-          Enable Explore Route
+        <button onClick={onEnable} style={{ flex: 1, padding: "9px 0", borderRadius: 10, background: "#111827", color: "#fff", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer" }}>
+          Enable
         </button>
-        <button onClick={onDismiss} style={{ padding: "9px 14px", borderRadius: 12, background: "transparent", color: "#6b7280", fontSize: 12, border: "1px solid #d1d5db", cursor: "pointer" }}>
+        <button onClick={onDismiss} style={{ padding: "9px 14px", borderRadius: 10, background: "transparent", color: "#9ca3af", fontSize: 12, border: "1px solid #e5e7eb", cursor: "pointer" }}>
           Not now
         </button>
       </div>
@@ -246,19 +246,12 @@ function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismi
 
 function McpActivatedCard({ routeContext }: { routeContext: RouteContext | null }) {
   return (
-    <div style={{ background: "linear-gradient(135deg, #0f172a, #1e293b)", border: "1px solid rgba(52,211,153,0.25)", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 8px #34d399" }} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#34d399", letterSpacing: 0.5, textTransform: "uppercase" }}>Explore Route MCP · Active</span>
-      </div>
-      <div style={{ fontFamily: "monospace", fontSize: 10, color: "rgba(255,255,255,0.6)", lineHeight: 1.8 }}>
-        <div>▸ <span style={{ color: "#34d399" }}>get_scenic_route</span>( mode: "{routeContext?.mode ?? "walking"}" )</div>
-        <div>▸ <span style={{ color: "#34d399" }}>get_nearby_merchants</span>( radius: 800m )</div>
-        {routeContext && (
-          <div style={{ marginTop: 6, color: "rgba(255,255,255,0.4)" }}>
-            Route: {routeContext.distanceKm}km · {routeContext.durationMinutes}min · merchants indexed
-          </div>
-        )}
+    <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 14px", marginTop: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", flexShrink: 0 }} className="animate-pulse" />
+        <span style={{ fontSize: 10, fontWeight: 600, color: "#374151", letterSpacing: 0.3 }}>
+          Shopify Catalog connected · {routeContext ? "route indexed" : "loading route…"}
+        </span>
       </div>
     </div>
   );
@@ -290,18 +283,20 @@ function LocationCard({ onSubmit }: { onSubmit: (location: string, mode: string)
 
 function JourneyStartCard({ routeContext, onStart }: { routeContext: RouteContext | null; onStart: () => void }) {
   return (
-    <div style={{ background: "linear-gradient(135deg, #fefce8, #fef9c3)", border: "1px solid #fde68a", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
-      <p style={{ fontSize: 12, fontWeight: 700, color: "#92400e", margin: "0 0 4px" }}>🗺️ Route mapped — ready to walk?</p>
-      {routeContext && (
-        <p style={{ fontSize: 11, color: "#78350f", margin: "0 0 4px", lineHeight: 1.5 }}>
-          {routeContext.summary}
-        </p>
-      )}
-      <p style={{ fontSize: 11, color: "#92400e", margin: "0 0 12px", fontWeight: 600 }}>
-        {routeContext?.distanceKm}km · {routeContext?.durationMinutes} min {routeContext?.mode ?? "walk"}
-      </p>
-      <button onClick={onStart} style={{ width: "100%", padding: "10px 0", borderRadius: 12, background: "linear-gradient(135deg, #d97706, #f59e0b)", color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
-        Begin {routeContext?.mode === "bicycling" ? "Ride" : "Walk"} →
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "12px 14px", marginTop: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#111827", margin: "0 0 2px" }}>NOTL Old Town loop</p>
+          <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>
+            {routeContext?.distanceKm ?? 3.2} km · {routeContext?.durationMinutes ?? 38} min · 8 merchants indexed
+          </p>
+        </div>
+        <div style={{ fontSize: 9, fontWeight: 600, color: "#059669", padding: "3px 8px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+          Ready
+        </div>
+      </div>
+      <button onClick={onStart} style={{ width: "100%", padding: "9px 0", borderRadius: 10, background: "#111827", color: "#fff", fontSize: 12, fontWeight: 600, border: "none", cursor: "pointer" }}>
+        Start walk →
       </button>
     </div>
   );
@@ -351,7 +346,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "a0",
     role: "assistant",
-    content: "This is a prototype demonstrating Shopify's agentic commerce primitives — set in Niagara-on-the-Lake Old Town.\n\nI can walk you through 8 merchants on a real 3.2 km loop: Queen Street artisans, Balzac's, Treadwell, Peller Estates. Inventory confidence scores, human stories, and one business not yet on Shopify.\n\nEnable Explore Route MCP to begin.",
+    content: "You're walking Niagara-on-the-Lake Old Town. I know what's on this loop — what's in stock right now, what's running low, who's worth a stop and why. I'll stay quiet unless the moment's right.",
     timestamp: new Date(),
     skipSources: true,
   },
@@ -415,7 +410,7 @@ export function AiChat({
       msgs.push({
         id: "a-route",
         role: "assistant",
-        content: `Mapped it. Here's your ${routeContext.mode ?? "walking"} route in ${routeContext.summary?.split(" ").slice(-2).join(" ") ?? "this area"} — ${routeContext.distanceKm}km, about ${routeContext.durationMinutes} minutes. I've indexed nearby merchants along the way. I'll surface the best ones as you go — not too often. Ready when you are.`,
+        content: `8 merchants indexed. Ready when you are.`,
         timestamp: new Date(),
         journeyCard: true,
         skipSources: true,
@@ -435,47 +430,70 @@ export function AiChat({
 
     if (journeyProgress >= 0.12 && !milestonesFired.has("m1") && merchants[0]) {
       const t = Date.now();
+      const m = merchants[0];
+      const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
+      const msg = m.name === "Niagara Home Bakery"
+        ? `Maria's been baking since 4am. Her butter tarts sell out by noon — it's 11:47 now, ${conf != null ? `${conf}% in stock confirmed 40 minutes ago` : "worth stopping early"}.`
+        : `${m.name} is 2 minutes off your path right now${conf != null ? ` — ${conf}% in stock, confirmed recently` : ""}.`;
       setTimeout(() => inject("m1", [
-        { id: `m1a-${t}`, role: "assistant", content: "You're just getting started — one right on your path:", timestamp: new Date(), skipSources: true },
-        { id: `m1b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[0], skipSources: true },
-      ]), 400);
+        { id: `m1a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
+        { id: `m1b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
+      ]), 600);
     }
     if (journeyProgress >= 0.38 && !milestonesFired.has("m2") && merchants[2]) {
       const t = Date.now();
+      const m = merchants[2];
+      const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
+      const msg = m.name.includes("Peller")
+        ? `Peller harvested this Icewine at 3am in January when it hit −10°C. ${conf != null ? `${conf}% of the harvest left` : "Limited bottles remaining"} — the weekend crowd hasn't arrived yet.`
+        : `${m.story ? m.story.split(".")[0] + "." : m.name + " is ahead on the route."} ${conf != null ? `${conf}% in stock right now.` : ""}`.trim();
       setTimeout(() => inject("m2", [
-        { id: `m2a-${t}`, role: "assistant", content: "Coming up ahead — worth a quick stop:", timestamp: new Date(), skipSources: true },
-        { id: `m2b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[2], skipSources: true },
-      ]), 400);
+        { id: `m2a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
+        { id: `m2b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
+      ]), 500);
     }
     if (journeyProgress >= 0.62 && !milestonesFired.has("m3") && merchants[1]) {
       const t = Date.now();
+      const m = merchants[1];
+      const msg = m.name.includes("Balzac")
+        ? `Balzac's roasted Monday's Ethiopian single-origin this morning. National award last year. Almost out. A coffee for the last 1.2 km if you want one.`
+        : `${m.story ? m.story.split(".")[0] + "." : m.description.split(".")[0] + "."} ${m.walkMinutes != null ? `${m.walkMinutes} min from here.` : ""}`.trim();
       setTimeout(() => inject("m3", [
-        { id: `m3a-${t}`, role: "assistant", content: "Good moment for a break if you want one:", timestamp: new Date(), skipSources: true },
-        { id: `m3b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[1], skipSources: true },
-      ]), 300);
+        { id: `m3a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
+        { id: `m3b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
+      ]), 400);
     }
-    // Ghost merchant — the undiscovered digital twin milestone
+    // Ghost merchant — the undiscovered digital twin
     const ghostMerchant = merchants.find((m) => m.isOnShopify === false);
     if (journeyProgress >= 0.70 && !milestonesFired.has("ghost") && ghostMerchant) {
       const t = Date.now();
       setTimeout(() => inject("ghost", [
-        { id: `ghost-a-${t}`, role: "assistant", content: "⚡ Something unusual — explorers found a business this week that has no digital presence at all. No Google listing, no website:", timestamp: new Date(), skipSources: true },
+        {
+          id: `ghost-a-${t}`, role: "assistant",
+          content: `Four explorers found a ceramic studio behind 74 Queen St this week. No Google listing, no website — just a handwritten sign on the gate. She's been throwing pots here for 22 years.`,
+          timestamp: new Date(), skipSources: true,
+        },
         { id: `ghost-b-${t}`, role: "assistant", content: "", timestamp: new Date(), ghostMerchantCard: ghostMerchant, skipSources: true },
       ]), 500);
     }
 
     if (journeyProgress >= 0.85 && !milestonesFired.has("m4") && merchants[3]) {
       const t = Date.now();
+      const m = merchants[3];
+      const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
+      const msg = m.name.includes("Greaves")
+        ? `Greaves Jams has been made in this kitchen since 1927. Ruth's great-granddaughter runs it now — same copper pot, same lavender honey recipe. ${conf != null ? `${conf}% in stock, confirmed an hour ago.` : ""}`
+        : `${m.story ? m.story.split(".")[0] + "." : m.name} — ${conf != null ? `${conf}% in stock` : "on the route home"}.`;
       setTimeout(() => inject("m4", [
-        { id: `m4a-${t}`, role: "assistant", content: "Almost done — one last stop on the way back:", timestamp: new Date(), skipSources: true },
-        { id: `m4b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[3], skipSources: true },
+        { id: `m4a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
+        { id: `m4b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
       ]), 400);
     }
     if (journeyProgress >= 1 && !milestonesFired.has("done")) {
       const t = Date.now();
       setTimeout(() => inject("done", [
-        { id: `done1-${t}`, role: "assistant", content: "Loop complete! 🎉 Hope the walk was worthwhile.\n\nWant to explore another spot? Just say where and I'll map a new route.", timestamp: new Date(), skipSources: true },
-      ]), 800);
+        { id: `done1-${t}`, role: "assistant", content: `3.2 km. 8 merchants in the Shopify catalog. One that isn't — yet.`, timestamp: new Date(), skipSources: true },
+      ]), 600);
     }
   }, [journeyProgress, journeyStarted, mcpEnabled, merchants, milestonesFired]);
 
@@ -560,7 +578,7 @@ export function AiChat({
 
   const hasRoute = !!routeContext;
   const suggestedPrompts = hasRoute
-    ? ["What's the best stop on this route?", "Tell me about the winery", "Which merchant has the best story?"]
+    ? ["What's running low today?", "Tell me about the ceramic studio", "What's worth stopping for right now?"]
     : [];
 
   return (
@@ -637,7 +655,7 @@ export function AiChat({
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             onFocus={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#a5b4fc"; }}
             onBlur={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#e5e7eb"; }}
-            placeholder={mcpEnabled ? (hasRoute ? "Ask about stops, food, shopping…" : "Where would you like to explore?") : "Ask Claude anything…"}
+            placeholder={mcpEnabled ? (hasRoute ? "Ask about anything on the loop…" : "Route indexing…") : "Ask Claude anything…"}
             disabled={isStreaming}
             style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#111827", outline: "none" }}
           />
