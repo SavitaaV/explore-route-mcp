@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   forceSimulation,
   forceLink,
@@ -15,6 +15,14 @@ const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
 // ─── API types ────────────────────────────────────────────────────────────────
 
+interface CatalogNodeProduct {
+  title: string;
+  price?: number;
+  currency?: string;
+  imageUrl?: string;
+  checkoutUrl?: string;
+}
+
 interface PlacesNode {
   placeId: string;
   name: string;
@@ -30,6 +38,10 @@ interface PlacesNode {
   shopifyMerchantId: string | null;
   website: string | null;
   source: "google" | "mock";
+  // Shopify Global Catalog enrichment
+  catalogProducts?: CatalogNodeProduct[];
+  topCategories?: string[];
+  checkoutUrl?: string | null;
 }
 
 interface PlacesEdge {
@@ -38,6 +50,8 @@ interface PlacesEdge {
   score: number;
   proximityM: number;
   affinityReason: string;
+  sharedCategories?: string[];
+  catalogOverlap?: number;
 }
 
 interface PlacesGraph {
@@ -47,30 +61,36 @@ interface PlacesGraph {
   source: "google" | "mock";
 }
 
-interface MockProduct {
+interface GlobalCatalogProduct {
+  upid?: string;
   title: string;
-  handle: string;
-  productType: string;
+  description?: string;
+  vendor?: string;
+  shopDomain?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  currency?: string;
+  imageUrl?: string;
+  checkoutUrl?: string;
   tags: string[];
-  minPrice: number;
-  maxPrice: number;
-  currency: string;
-  imageUrl: string | null;
+  productType?: string;
+  offersCount: number;
 }
 
-interface MockCollection {
-  handle: string;
-  title: string;
-  products: MockProduct[];
-}
-
-interface MockCatalog {
+interface GlobalCatalogResponse {
   source: string;
-  collectionsCount: number;
-  totalProducts: number;
-  collections: MockCollection[];
-  allProductTypes: string[];
-  sampleTags: string[];
+  query: string;
+  count: number;
+  products: GlobalCatalogProduct[];
+  reason?: string;
+}
+
+interface CatalogStatus {
+  configured: boolean;
+  hasClientId: boolean;
+  hasClientSecret: boolean;
+  isPlaceholder: boolean;
+  instructions: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -155,7 +175,6 @@ interface MerchantGraphProps {
 
 export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const [graphData, setGraphData] = useState<PlacesGraph | null>(null);
-  const [catalog, setCatalog] = useState<MockCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -163,21 +182,42 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [settled, setSettled] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
-  const [catalogTab, setCatalogTab] = useState(0);
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [globalResults, setGlobalResults] = useState<GlobalCatalogProduct[] | null>(null);
+  const [globalSearching, setGlobalSearching] = useState(false);
+  const [globalReason, setGlobalReason] = useState<string | null>(null);
 
   const simRef = useRef<ReturnType<typeof forceSimulation<SimNode, SimEdge>> | null>(null);
 
-  // Fetch graph + catalog in parallel
+  // Fetch graph + catalog-status in parallel
   useEffect(() => {
     setLoading(true);
     Promise.all([
       fetch(`${BASE_URL}/api/places-graph`).then((r) => r.json()),
-      fetch(`${BASE_URL}/api/mockshop-catalog`).then((r) => r.json()).catch(() => null),
-    ]).then(([g, c]) => {
+      fetch(`${BASE_URL}/api/catalog/status`).then((r) => r.json()).catch(() => null),
+    ]).then(([g, cs]) => {
       setGraphData(g as PlacesGraph);
-      setCatalog(c as MockCatalog | null);
+      setCatalogStatus(cs as CatalogStatus | null);
       setLoading(false);
     }).catch(() => { setError(true); setLoading(false); });
+  }, []);
+
+  const handleGlobalSearch = useCallback(async (q: string) => {
+    if (!q.trim()) return;
+    setGlobalSearching(true);
+    setGlobalResults(null);
+    setGlobalReason(null);
+    try {
+      const r = await fetch(`${BASE_URL}/api/catalog/search?q=${encodeURIComponent(q)}&limit=8&shipsTo=CA`);
+      const data = (await r.json()) as GlobalCatalogResponse;
+      setGlobalResults(data.products ?? []);
+      setGlobalReason(data.reason ?? null);
+    } catch {
+      setGlobalReason("Search failed — check API server");
+    } finally {
+      setGlobalSearching(false);
+    }
   }, []);
 
   const shadowEdges = useMemo(() => (graphData ? computeShadowEdges(graphData.nodes) : []), [graphData]);
@@ -304,6 +344,25 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
               {graphData.edges.length} edges
             </span>
           </div>
+          {/* Shopify Global Catalog credential badge */}
+          {catalogStatus && (
+            <div style={{
+              marginTop: 8, padding: "5px 8px", borderRadius: 7,
+              background: catalogStatus.configured ? "rgba(5,150,105,0.1)" : "rgba(245,158,11,0.08)",
+              border: `1px solid ${catalogStatus.configured ? "rgba(52,211,153,0.2)" : "rgba(245,158,11,0.2)"}`,
+              display: "flex", alignItems: "center", gap: 6,
+            }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: catalogStatus.configured ? "#34d399" : "#f59e0b", flexShrink: 0 }} />
+              <span style={{ fontSize: 7.5, color: catalogStatus.configured ? "#34d399" : "#f59e0b", fontWeight: 600, flex: 1 }}>
+                {catalogStatus.configured
+                  ? "Global Catalog API · live"
+                  : "Global Catalog · needs credentials"}
+              </span>
+              {!catalogStatus.configured && (
+                <span style={{ fontSize: 7, color: "#f59e0b" }}>needs credentials</span>
+              )}
+            </div>
+          )}
           {/* City filter */}
           {cities.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
@@ -387,60 +446,100 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
           })}
         </div>
 
-        {/* Mock.shop catalog panel */}
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: 220, display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "8px 16px 6px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.7)", margin: 0 }}>
-              🛍️ Mock.shop Catalog
-            </p>
-            {catalog && (
-              <span style={{ fontSize: 7.5, color: "rgba(255,255,255,0.25)" }}>
-                {catalog.totalProducts} products · {catalog.collectionsCount} collections
-              </span>
-            )}
+        {/* Shopify Global Catalog panel */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: 240, display: "flex", flexDirection: "column" }}>
+          {/* Header */}
+          <div style={{ padding: "6px 14px 5px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: catalogStatus?.configured ? "#34d399" : "#f59e0b" }}>
+              🌐 Shopify Global Catalog{catalogStatus?.configured ? " ✓" : ""}
+            </span>
           </div>
-          {catalog ? (
-            <>
-              {/* Collection tabs */}
-              <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: "0 16px 6px", flexShrink: 0 }}>
-                {catalog.collections.map((col, i) => (
-                  <button
-                    key={col.handle}
-                    onClick={() => setCatalogTab(i)}
-                    style={{ fontSize: 7.5, padding: "2px 8px", borderRadius: 8, border: `1px solid rgba(150,191,72,${catalogTab === i ? "0.4" : "0.15"})`, background: catalogTab === i ? "rgba(150,191,72,0.12)" : "transparent", color: catalogTab === i ? "#96BF48" : "rgba(255,255,255,0.3)", cursor: "pointer", whiteSpace: "nowrap", fontWeight: 600, flexShrink: 0 }}
-                  >
-                    {col.title}
-                  </button>
-                ))}
+
+          {/* Global Catalog panel */}
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+              {/* Search input */}
+              <div style={{ padding: "7px 12px", flexShrink: 0, display: "flex", gap: 6 }}>
+                <input
+                  type="text"
+                  value={globalQuery}
+                  onChange={(e) => setGlobalQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleGlobalSearch(globalQuery); }}
+                  placeholder={catalogStatus?.configured ? "Search all Shopify merchants…" : "Enter query (needs credentials)"}
+                  style={{ flex: 1, fontSize: 9, padding: "5px 9px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)", color: "#fff", outline: "none", fontFamily: "inherit" }}
+                />
+                <button
+                  onClick={() => handleGlobalSearch(globalQuery)}
+                  disabled={globalSearching || !globalQuery.trim()}
+                  style={{ fontSize: 9, padding: "5px 10px", borderRadius: 7, border: "1px solid rgba(52,211,153,0.3)", background: "rgba(5,150,105,0.15)", color: "#34d399", cursor: "pointer", fontWeight: 700, flexShrink: 0, opacity: globalSearching || !globalQuery.trim() ? 0.4 : 1 }}
+                >
+                  {globalSearching ? "…" : "→"}
+                </button>
               </div>
-              {/* Products in active collection */}
+
+              {/* Results or status */}
               <div style={{ overflowY: "auto", flex: 1 }}>
-                {catalog.collections[catalogTab]?.products.map((p) => (
-                  <div key={p.handle} style={{ padding: "5px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", display: "flex", alignItems: "center", gap: 8 }}>
-                    {p.imageUrl && (
-                      <img src={p.imageUrl} alt={p.title} style={{ width: 28, height: 28, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />
+                {globalSearching && (
+                  <p style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", padding: "8px 14px" }}>Searching global catalog…</p>
+                )}
+                {globalReason && !globalResults?.length && (
+                  <div style={{ padding: "8px 14px" }}>
+                    <p style={{ fontSize: 8, color: "#f59e0b", margin: "0 0 4px", fontWeight: 700 }}>
+                      {catalogStatus?.configured ? "No results" : "Credentials needed"}
+                    </p>
+                    <p style={{ fontSize: 7.5, color: "rgba(255,255,255,0.3)", margin: 0, lineHeight: 1.5 }}>{globalReason}</p>
+                    {!catalogStatus?.configured && catalogStatus?.instructions && (
+                      <p style={{ fontSize: 7, color: "rgba(245,158,11,0.6)", margin: "6px 0 0", lineHeight: 1.5 }}>{catalogStatus.instructions}</p>
                     )}
+                  </div>
+                )}
+                {!globalResults && !globalSearching && !globalReason && (
+                  <div style={{ padding: "8px 14px" }}>
+                    <p style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", margin: "0 0 6px" }}>
+                      {catalogStatus?.configured ? "Search across all Shopify merchants worldwide" : "Shopify Global Catalog — real product search across all Shopify merchants"}
+                    </p>
+                    {!catalogStatus?.configured && (
+                      <div style={{ background: "rgba(245,158,11,0.07)", border: "1px dashed rgba(245,158,11,0.25)", borderRadius: 6, padding: "6px 8px" }}>
+                        <p style={{ fontSize: 7.5, color: "#f59e0b", fontWeight: 700, margin: "0 0 3px" }}>Setup required</p>
+                        <p style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", margin: 0, lineHeight: 1.5 }}>
+                          On dev.shopify.com/dashboard → Catalogs → click your key → copy the real Client ID and Client secret into Replit Secrets.
+                        </p>
+                      </div>
+                    )}
+                    {catalogStatus?.configured && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {["chutney", "chai tea", "artisan jam", "craft beer", "olive oil"].map((q) => (
+                          <button key={q} onClick={() => { setGlobalQuery(q); handleGlobalSearch(q); }}
+                            style={{ fontSize: 7.5, padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(52,211,153,0.2)", background: "rgba(5,150,105,0.08)", color: "#34d399", cursor: "pointer", fontWeight: 600 }}>
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {globalResults?.map((p, i) => (
+                  <div key={p.upid ?? i} style={{ padding: "5px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", display: "flex", alignItems: "flex-start", gap: 7 }}>
+                    {p.imageUrl && <img src={p.imageUrl} alt={p.title} style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", flexShrink: 0, marginTop: 1 }} />}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 8.5, color: "#fff", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.title}</p>
-                      <div style={{ display: "flex", gap: 6, marginTop: 1 }}>
-                        <span style={{ fontSize: 7, color: "#96BF48" }}>
-                          ${p.minPrice.toFixed(0)}{p.maxPrice !== p.minPrice ? `–$${p.maxPrice.toFixed(0)}` : ""} {p.currency}
-                        </span>
-                        {p.productType && <span style={{ fontSize: 7, color: "rgba(255,255,255,0.25)" }}>{p.productType}</span>}
+                      <div style={{ display: "flex", gap: 6, marginTop: 1, flexWrap: "wrap" }}>
+                        {p.minPrice != null && <span style={{ fontSize: 7, color: "#34d399", fontWeight: 700 }}>${p.minPrice.toFixed(2)} {p.currency ?? "CAD"}</span>}
+                        {p.vendor && <span style={{ fontSize: 7, color: "rgba(255,255,255,0.3)" }}>{p.vendor}</span>}
+                        {p.offersCount > 1 && <span style={{ fontSize: 7, color: "rgba(52,211,153,0.5)" }}>{p.offersCount} sellers</span>}
                       </div>
-                      {p.tags.length > 0 && (
-                        <p style={{ fontSize: 6.5, color: "rgba(255,255,255,0.2)", margin: "1px 0 0" }}>{p.tags.slice(0, 3).join(" · ")}</p>
+                      {p.checkoutUrl && (
+                        <a href={p.checkoutUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 7, color: "#34d399", textDecoration: "none", fontWeight: 700, display: "inline-block", marginTop: 2 }}>
+                          Buy → {p.shopDomain?.replace("www.", "") ?? ""}
+                        </a>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
-            </>
-          ) : (
-            <p style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", padding: "6px 16px" }}>Loading Mock.shop catalog…</p>
-          )}
+            </div>
+          </div>
         </div>
-      </div>
 
       {/* ── Graph area ── */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -623,16 +722,16 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
             const scaleY = sh / GH;
             const px = nx * scaleX;
             const py = ny * scaleY;
-            const tipX = px > sw * 0.65 ? px - 190 : px + 22;
-            const tipY = Math.max(8, Math.min(sh - 220, py - 30));
+            const tipX = px > sw * 0.65 ? px - 210 : px + 22;
+            const tipY = Math.max(8, Math.min(sh - 320, py - 30));
 
             return (
               <div style={{
                 position: "absolute", left: tipX, top: tipY, zIndex: 30,
                 background: "rgba(10,13,18,0.98)", border: `1px solid ${color}44`,
-                borderRadius: 10, padding: "10px 12px", minWidth: 168, maxWidth: 200,
+                borderRadius: 10, padding: "10px 12px", minWidth: 168, maxWidth: 210,
                 boxShadow: `0 8px 28px rgba(0,0,0,0.7), 0 0 0 1px ${color}22`,
-                pointerEvents: "none",
+                pointerEvents: isVerified && node.catalogProducts?.length ? "auto" : "none",
               }}>
                 <p style={{ fontSize: 12, fontWeight: 700, color: "#fff", margin: "0 0 2px", lineHeight: 1.3 }}>
                   {TYPE_EMOJI[node.type] ?? "🏪"} {node.name}
@@ -668,11 +767,54 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
                   </div>
                 )}
 
-                {isVerified && (
+                {isVerified && node.catalogProducts && node.catalogProducts.length > 0 ? (
+                  <div style={{ marginTop: 7, paddingTop: 7, borderTop: "1px solid rgba(52,211,153,0.12)" }}>
+                    <p style={{ fontSize: 7.5, color: "#34d399", fontWeight: 700, margin: "0 0 5px", letterSpacing: 0.3 }}>
+                      🛍 SHOPIFY CATALOG
+                    </p>
+                    {node.catalogProducts.map((p, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+                        {p.imageUrl && (
+                          <img src={p.imageUrl} alt={p.title}
+                            style={{ width: 24, height: 24, borderRadius: 3, objectFit: "cover", flexShrink: 0 }} />
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 8, color: "#fff", margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {p.title.length > 22 ? p.title.slice(0, 22) + "…" : p.title}
+                          </p>
+                          {p.price != null && (
+                            <span style={{ fontSize: 7, color: "#34d399" }}>
+                              ${p.price.toFixed(2)} {p.currency ?? "CAD"}
+                            </span>
+                          )}
+                        </div>
+                        {p.checkoutUrl && (
+                          <a href={p.checkoutUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 7, color: "#34d399", fontWeight: 700, textDecoration: "none",
+                              padding: "2px 6px", border: "1px solid rgba(52,211,153,0.35)",
+                              borderRadius: 4, whiteSpace: "nowrap", flexShrink: 0, pointerEvents: "auto" }}>
+                            Buy →
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                    {node.topCategories && node.topCategories.length > 0 && (
+                      <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
+                        {node.topCategories.map((c) => (
+                          <span key={c} style={{ fontSize: 6.5, padding: "1px 5px", borderRadius: 8,
+                            background: "rgba(52,211,153,0.07)", color: "#34d399",
+                            border: "1px solid rgba(52,211,153,0.18)" }}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : isVerified ? (
                   <p style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", margin: 0, lineHeight: 1.5 }}>
                     Real-time inventory edges. AI agents can query stock, trigger purchase, verify checkout.
                   </p>
-                )}
+                ) : null}
 
                 <div style={{ fontSize: 7.5, color: "rgba(255,255,255,0.25)", marginTop: 6 }}>
                   {node.openNow === true ? "🟢 Open now" : node.openNow === false ? "🔴 Closed" : "Hours unknown"}
