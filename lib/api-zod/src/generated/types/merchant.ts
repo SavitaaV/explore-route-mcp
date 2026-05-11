@@ -27,4 +27,26 @@ export interface Merchant {
    * @nullable
    */
   walkMinutes: number | null;
+  /**
+   * One-sentence human story about this merchant surfaced by the AI agent
+   * @nullable
+   */
+  story?: string | null;
+  /**
+   * 0-100 crowdsourced inventory confidence score, time-decayed
+   * @nullable
+   */
+  inventoryConfidence?: number | null;
+  /**
+   * Number of explorers who verified inventory recently
+   * @nullable
+   */
+  recentVisitors?: number | null;
+  /**
+   * Hours since last crowdsourced inventory confirmation
+   * @nullable
+   */
+  hoursAgoConfirmed?: number | null;
+  /** Whether this merchant has a Shopify store — false means digital twin candidate */
+  isOnShopify?: boolean;
 }

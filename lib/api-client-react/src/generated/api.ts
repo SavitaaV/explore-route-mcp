@@ -23,6 +23,7 @@ import type {
   AnthropicMessage,
   CreateAnthropicConversationBody,
   ErrorResponse,
+  GetMerchantGraphParams,
   GetMerchantsParams,
   GetScenicRouteParams,
   HealthStatus,
@@ -30,6 +31,7 @@ import type {
   Merchant,
   MerchantCard,
   MerchantCardRequest,
+  MerchantGraph,
   ScenicRoute,
   SendAnthropicMessageBody,
 } from "./api.schemas";
@@ -391,6 +393,103 @@ export const useGetMerchantCard = <
 > => {
   return useMutation(getGetMerchantCardMutationOptions(options));
 };
+
+/**
+ * @summary Get merchant co-purchase similarity graph
+ */
+export const getGetMerchantGraphUrl = (params?: GetMerchantGraphParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/merchant-graph?${stringifiedParams}`
+    : `/api/merchant-graph`;
+};
+
+export const getMerchantGraph = async (
+  params?: GetMerchantGraphParams,
+  options?: RequestInit,
+): Promise<MerchantGraph> => {
+  return customFetch<MerchantGraph>(getGetMerchantGraphUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMerchantGraphQueryKey = (
+  params?: GetMerchantGraphParams,
+) => {
+  return [`/api/merchant-graph`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetMerchantGraphQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMerchantGraph>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMerchantGraphParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMerchantGraph>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMerchantGraphQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMerchantGraph>>
+  > = ({ signal }) => getMerchantGraph(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMerchantGraph>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMerchantGraphQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMerchantGraph>>
+>;
+export type GetMerchantGraphQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get merchant co-purchase similarity graph
+ */
+
+export function useGetMerchantGraph<
+  TData = Awaited<ReturnType<typeof getMerchantGraph>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetMerchantGraphParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMerchantGraph>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMerchantGraphQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List available MCP tools

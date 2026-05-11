@@ -150,6 +150,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /merchant-graph:
+    get:
+      operationId: getMerchantGraph
+      tags: [scenic]
+      summary: Get merchant co-purchase similarity graph
+      parameters:
+        - name: minSimilarity
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Minimum edge similarity threshold (default 0.25)
+        - name: merchantTypes
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated merchant type filter
+      responses:
+        "200":
+          description: Force-directed graph of merchant similarity nodes and edges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantGraph"
+
   /mcp-tools:
     get:
       operationId: getMcpTools
@@ -497,6 +523,60 @@ components:
           items:
             $ref: "#/components/schemas/AnthropicMessage"
       required: [id, title, createdAt, messages]
+
+    MerchantNode:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        rating:
+          type: ["number", "null"]
+        lat:
+          type: number
+        lng:
+          type: number
+        photoUrl:
+          type: ["string", "null"]
+        topTags:
+          type: array
+          items:
+            type: string
+        avgPrice:
+          type: ["number", "null"]
+      required: [id, name, type, rating, lat, lng, topTags]
+
+    MerchantEdge:
+      type: object
+      properties:
+        sourceId:
+          type: string
+        targetId:
+          type: string
+        similarityScore:
+          type: number
+          description: 0–1 co-purchase similarity score
+        sharedTags:
+          type: array
+          items:
+            type: string
+      required: [sourceId, targetId, similarityScore, sharedTags]
+
+    MerchantGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/MerchantEdge"
+      required: [nodes, edges]
 
     AnthropicError:
       type: object

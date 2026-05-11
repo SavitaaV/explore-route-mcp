@@ -479,6 +479,105 @@ router.post("/merchant-card", async (req, res) => {
   }
 });
 
+// Merchant type → product tag vocabulary (used for Jaccard similarity)
+const TYPE_TAGS: Record<string, string[]> = {
+  winery:     ["wine", "icewine", "vineyard", "tasting", "red-wine", "white-wine", "ontario-vqa", "reserve", "cellar"],
+  bakery:     ["bread", "sourdough", "pastry", "butter-tart", "fresh-baked", "artisan-bread", "organic", "local-grain"],
+  cafe:       ["coffee", "espresso", "roasted", "single-origin", "specialty-coffee", "fair-trade", "cold-brew", "latte"],
+  restaurant: ["seasonal", "farm-to-table", "local-sourcing", "ontario", "tasting-menu", "fine-dining", "chefs-table"],
+  artisan:    ["handmade", "local", "artisan", "gift", "ontario-made", "craft", "natural", "small-batch", "preserve"],
+  boutique:   ["curated", "gift-set", "souvenir", "local-art", "collectible", "unique", "theatre", "heritage"],
+};
+
+// Co-purchase type affinity prior (symmetric)
+const TYPE_AFFINITY: Record<string, Record<string, number>> = {
+  winery:     { winery: 1.0, restaurant: 0.80, artisan: 0.60, boutique: 0.55, cafe: 0.35, bakery: 0.25 },
+  restaurant: { winery: 0.80, restaurant: 1.0, cafe: 0.65, bakery: 0.60, artisan: 0.45, boutique: 0.35 },
+  cafe:       { cafe: 1.0, bakery: 0.75, restaurant: 0.65, artisan: 0.50, boutique: 0.45, winery: 0.35 },
+  bakery:     { bakery: 1.0, cafe: 0.75, restaurant: 0.60, artisan: 0.50, boutique: 0.40, winery: 0.25 },
+  artisan:    { artisan: 1.0, boutique: 0.70, winery: 0.60, cafe: 0.50, bakery: 0.50, restaurant: 0.45 },
+  boutique:   { boutique: 1.0, artisan: 0.70, winery: 0.55, cafe: 0.45, bakery: 0.40, restaurant: 0.35 },
+};
+
+function jaccardSim(a: string[], b: string[]): { score: number; shared: string[] } {
+  const setA = new Set(a);
+  const shared = b.filter((x) => setA.has(x));
+  const union = new Set([...a, ...b]);
+  return { score: union.size === 0 ? 0 : shared.length / union.size, shared };
+}
+
+// GET /api/merchant-graph
+router.get("/merchant-graph", async (req, res) => {
+  const minSim = parseFloat(String(req.query.minSimilarity ?? "0.25"));
+  const typeFilter = req.query.merchantTypes
+    ? String(req.query.merchantTypes).split(",").map((s) => s.trim())
+    : null;
+
+  const graphMerchants = MOCK_MERCHANTS.filter(
+    (m) => m.isOnShopify && (!typeFilter || typeFilter.includes(m.type))
+  );
+
+  // Fetch real price data from Mock.shop for each unique merchant type
+  const avgPriceByType: Record<string, number | null> = {};
+  const uniqueTypes = [...new Set(graphMerchants.map((m) => m.type))];
+  await Promise.all(
+    uniqueTypes.map(async (type) => {
+      try {
+        const products = await fetchShopifyProducts(type);
+        const prices = products
+          .map((p) => parseFloat(p.price.replace(/[^0-9.]/g, "")))
+          .filter(Boolean);
+        avgPriceByType[type] = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
+      } catch {
+        avgPriceByType[type] = null;
+      }
+    })
+  );
+
+  const nodes = graphMerchants.map((m) => ({
+    id: m.id,
+    name: m.name,
+    type: m.type,
+    rating: m.rating,
+    lat: m.lat,
+    lng: m.lng,
+    photoUrl: m.photoUrl,
+    topTags: (TYPE_TAGS[m.type] ?? []).slice(0, 5),
+    avgPrice: avgPriceByType[m.type] ?? null,
+  }));
+
+  // Compute all prices for normalisation
+  const allPrices = Object.values(avgPriceByType).filter((p): p is number => p !== null);
+  const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
+  const priceRange = allPrices.length ? Math.max(...allPrices) - priceMin || 1 : 1;
+
+  const edges: Array<{ sourceId: string; targetId: string; similarityScore: number; sharedTags: string[] }> = [];
+
+  for (let i = 0; i < graphMerchants.length; i++) {
+    for (let j = i + 1; j < graphMerchants.length; j++) {
+      const a = graphMerchants[i];
+      const b = graphMerchants[j];
+      const tagsA = TYPE_TAGS[a.type] ?? [];
+      const tagsB = TYPE_TAGS[b.type] ?? [];
+      const { score: jScore, shared } = jaccardSim(tagsA, tagsB);
+
+      const typeAff = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.30;
+      const priceA = avgPriceByType[a.type] ?? priceMin + priceRange / 2;
+      const priceB = avgPriceByType[b.type] ?? priceMin + priceRange / 2;
+      const priceSim = 1 - Math.abs(priceA - priceB) / priceRange;
+
+      const score = Math.round((0.40 * typeAff + 0.40 * jScore + 0.20 * priceSim) * 100) / 100;
+
+      if (score >= minSim) {
+        edges.push({ sourceId: a.id, targetId: b.id, similarityScore: score, sharedTags: shared.slice(0, 4) });
+      }
+    }
+  }
+
+  req.log.info({ nodes: nodes.length, edges: edges.length }, "merchant-graph computed");
+  res.json({ nodes, edges });
+});
+
 // GET /api/mcp-tools
 router.get("/mcp-tools", (_req, res) => {
   res.json([
@@ -513,6 +612,25 @@ router.get("/mcp-tools", (_req, res) => {
           },
         },
         required: ["lat", "lng"],
+      },
+    },
+    {
+      name: "get_merchant_graph",
+      description:
+        "Get a co-purchase similarity graph of all merchants on the route. Nodes are merchants; edges represent the probability a shopper who buys from one will also buy from another, computed from product tag overlap, price-range proximity, and merchant-type affinity. Use to recommend 'pairs well with' merchants or understand the commerce ecosystem on a route.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          minSimilarity: {
+            type: "number",
+            description: "Minimum edge similarity threshold 0–1 (default 0.25). Raise to see only the strongest connections.",
+          },
+          merchantTypes: {
+            type: "string",
+            description: "Comma-separated list of merchant types to include (e.g. 'winery,restaurant'). Omit for all types.",
+          },
+        },
+        required: [],
       },
     },
   ]);

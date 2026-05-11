@@ -61,6 +61,28 @@ export interface Merchant {
    * @nullable
    */
   walkMinutes: number | null;
+  /**
+   * One-sentence human story about this merchant surfaced by the AI agent
+   * @nullable
+   */
+  story?: string | null;
+  /**
+   * 0-100 crowdsourced inventory confidence score, time-decayed
+   * @nullable
+   */
+  inventoryConfidence?: number | null;
+  /**
+   * Number of explorers who verified inventory recently
+   * @nullable
+   */
+  recentVisitors?: number | null;
+  /**
+   * Hours since last crowdsourced inventory confirmation
+   * @nullable
+   */
+  hoursAgoConfirmed?: number | null;
+  /** Whether this merchant has a Shopify store — false means digital twin candidate */
+  isOnShopify?: boolean;
 }
 
 export interface MerchantCardRequest {
@@ -133,6 +155,34 @@ export interface AnthropicConversationWithMessages {
   messages: AnthropicMessage[];
 }
 
+export interface MerchantNode {
+  id: string;
+  name: string;
+  type: string;
+  /** @nullable */
+  rating: number | null;
+  lat: number;
+  lng: number;
+  /** @nullable */
+  photoUrl?: string | null;
+  topTags: string[];
+  /** @nullable */
+  avgPrice?: number | null;
+}
+
+export interface MerchantEdge {
+  sourceId: string;
+  targetId: string;
+  /** 0–1 co-purchase similarity score */
+  similarityScore: number;
+  sharedTags: string[];
+}
+
+export interface MerchantGraph {
+  nodes: MerchantNode[];
+  edges: MerchantEdge[];
+}
+
 export interface AnthropicError {
   error: string;
 }
@@ -151,4 +201,15 @@ export type GetMerchantsParams = {
   lng: number;
   radius?: number;
   type?: string;
+};
+
+export type GetMerchantGraphParams = {
+  /**
+   * Minimum edge similarity threshold (default 0.25)
+   */
+  minSimilarity?: number;
+  /**
+   * Comma-separated merchant type filter
+   */
+  merchantTypes?: string;
 };

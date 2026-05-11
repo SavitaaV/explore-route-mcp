@@ -68,6 +68,30 @@ export const GetMerchantsResponseItem = zod.object({
     .number()
     .nullable()
     .describe("Minutes to walk from current position"),
+  story: zod
+    .string()
+    .nullish()
+    .describe(
+      "One-sentence human story about this merchant surfaced by the AI agent",
+    ),
+  inventoryConfidence: zod
+    .number()
+    .nullish()
+    .describe("0-100 crowdsourced inventory confidence score, time-decayed"),
+  recentVisitors: zod
+    .number()
+    .nullish()
+    .describe("Number of explorers who verified inventory recently"),
+  hoursAgoConfirmed: zod
+    .number()
+    .nullish()
+    .describe("Hours since last crowdsourced inventory confirmation"),
+  isOnShopify: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Whether this merchant has a Shopify store — false means digital twin candidate",
+    ),
 });
 export const GetMerchantsResponse = zod.array(GetMerchantsResponseItem);
 
@@ -97,6 +121,30 @@ export const GetMerchantCardResponse = zod.object({
       .number()
       .nullable()
       .describe("Minutes to walk from current position"),
+    story: zod
+      .string()
+      .nullish()
+      .describe(
+        "One-sentence human story about this merchant surfaced by the AI agent",
+      ),
+    inventoryConfidence: zod
+      .number()
+      .nullish()
+      .describe("0-100 crowdsourced inventory confidence score, time-decayed"),
+    recentVisitors: zod
+      .number()
+      .nullish()
+      .describe("Number of explorers who verified inventory recently"),
+    hoursAgoConfirmed: zod
+      .number()
+      .nullish()
+      .describe("Hours since last crowdsourced inventory confirmation"),
+    isOnShopify: zod
+      .boolean()
+      .optional()
+      .describe(
+        "Whether this merchant has a Shopify store — false means digital twin candidate",
+      ),
   }),
   products: zod.array(
     zod.object({
@@ -109,6 +157,46 @@ export const GetMerchantCardResponse = zod.object({
   ),
   checkoutUrl: zod.string(),
   hapticDistance: zod.number(),
+});
+
+/**
+ * @summary Get merchant co-purchase similarity graph
+ */
+export const GetMerchantGraphQueryParams = zod.object({
+  minSimilarity: zod.coerce
+    .number()
+    .optional()
+    .describe("Minimum edge similarity threshold (default 0.25)"),
+  merchantTypes: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated merchant type filter"),
+});
+
+export const GetMerchantGraphResponse = zod.object({
+  nodes: zod.array(
+    zod.object({
+      id: zod.string(),
+      name: zod.string(),
+      type: zod.string(),
+      rating: zod.number().nullable(),
+      lat: zod.number(),
+      lng: zod.number(),
+      photoUrl: zod.string().nullish(),
+      topTags: zod.array(zod.string()),
+      avgPrice: zod.number().nullish(),
+    }),
+  ),
+  edges: zod.array(
+    zod.object({
+      sourceId: zod.string(),
+      targetId: zod.string(),
+      similarityScore: zod
+        .number()
+        .describe("0–1 co-purchase similarity score"),
+      sharedTags: zod.array(zod.string()),
+    }),
+  ),
 });
 
 /**

@@ -8,7 +8,8 @@ import {
 import { MapView } from "@/components/MapView";
 import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
-import { Wifi, Battery, Signal, MapPin } from "lucide-react";
+import { MerchantGraph } from "@/components/MerchantGraph";
+import { Wifi, Battery, Signal, MapPin, Network } from "lucide-react";
 
 function useTime() {
   const [time, setTime] = useState(new Date());
@@ -56,6 +57,7 @@ export default function Home() {
   const [journeyProgress, setJourneyProgress] = useState(0);
   const [watchAlert, setWatchAlert] = useState<{ name: string; type: string } | null>(null);
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
+  const [leftView, setLeftView] = useState<"map" | "graph">("map");
 
   // Dynamic route — set from chat when user picks a location
   const [routeParams, setRouteParams] = useState<{ origin: string; dest: string; mode: string } | null>(null);
@@ -202,8 +204,29 @@ export default function Home() {
 
         {/* LEFT — Map/Wearable */}
         <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
-          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
-            Navigation & Discovery
+          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between", width: "min(300px, 42vw)" }}>
+            <span>Navigation & Discovery</span>
+            {/* Map / Graph toggle */}
+            <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 20, padding: 2, gap: 2 }}>
+              <button
+                onClick={() => setLeftView("map")}
+                style={{ padding: "2px 10px", borderRadius: 18, fontSize: 9, fontWeight: 600, border: "none", cursor: "pointer", letterSpacing: 0.5, textTransform: "uppercase",
+                  background: leftView === "map" ? "rgba(52,211,153,0.2)" : "transparent",
+                  color: leftView === "map" ? "#34d399" : "rgba(255,255,255,0.3)",
+                }}
+              >
+                <MapPin style={{ width: 8, height: 8, display: "inline", marginRight: 3 }} />Map
+              </button>
+              <button
+                onClick={() => setLeftView("graph")}
+                style={{ padding: "2px 10px", borderRadius: 18, fontSize: 9, fontWeight: 600, border: "none", cursor: "pointer", letterSpacing: 0.5, textTransform: "uppercase",
+                  background: leftView === "graph" ? "rgba(52,211,153,0.2)" : "transparent",
+                  color: leftView === "graph" ? "#34d399" : "rgba(255,255,255,0.3)",
+                }}
+              >
+                <Network style={{ width: 8, height: 8, display: "inline", marginRight: 3 }} />Graph
+              </button>
+            </div>
           </div>
 
           <div style={{
@@ -221,31 +244,37 @@ export default function Home() {
             <PhoneStatusBar side="map" />
 
             <div className="flex-1 relative overflow-hidden">
-              <MapView
-                route={route ?? null}
-                merchants={merchants ?? []}
-                journeyProgress={journeyProgress}
-                journeyStarted={journeyStarted}
-                selectedMerchantId={selectedMerchantId}
-                onPinClick={handlePinClick}
-                isLoading={routeLoading || merchantsLoading}
-                routeRequested={!!routeParams}
-              />
+              {leftView === "graph" ? (
+                <MerchantGraph onMerchantClick={handlePinClick} />
+              ) : (
+                <>
+                  <MapView
+                    route={route ?? null}
+                    merchants={merchants ?? []}
+                    journeyProgress={journeyProgress}
+                    journeyStarted={journeyStarted}
+                    selectedMerchantId={selectedMerchantId}
+                    onPinClick={handlePinClick}
+                    isLoading={routeLoading || merchantsLoading}
+                    routeRequested={!!routeParams}
+                  />
 
-              {/* Overlay when MCP not enabled */}
-              {!mcpEnabled && (
-                <div style={{
-                  position: "absolute", inset: 0,
-                  background: "rgba(6,8,16,0.6)", backdropFilter: "blur(2px)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8,
-                }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <MapPin style={{ width: 18, height: 18, color: "#34d399" }} />
-                  </div>
-                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", maxWidth: 140, lineHeight: 1.5 }}>
-                    Enable Explore Route MCP in the chat to activate navigation
-                  </p>
-                </div>
+                  {/* Overlay when MCP not enabled */}
+                  {!mcpEnabled && (
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      background: "rgba(6,8,16,0.6)", backdropFilter: "blur(2px)",
+                      display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8,
+                    }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <MapPin style={{ width: 18, height: 18, color: "#34d399" }} />
+                      </div>
+                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", maxWidth: 140, lineHeight: 1.5 }}>
+                        Enable Explore Route MCP in the chat to activate navigation
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
