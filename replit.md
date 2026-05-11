@@ -14,6 +14,8 @@ Required env secrets:
 - `GOOGLE_MAPS_API_KEY` — backend Google Maps Routes + Places API (falls back to mock if absent)
 - `VITE_GOOGLE_MAPS_API_KEY` — frontend Google Maps JS embed (same value, must be VITE_ prefixed)
 - `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` + `AI_INTEGRATIONS_ANTHROPIC_API_KEY` — provisioned via Replit Anthropic AI integration
+- `SHOPIFY_CATALOG_CLIENT_ID` — OAuth client_id for Shopify Global Catalog API (from dev.shopify.com/dashboard → Catalogs → key detail page, NOT the record ID shown in the list)
+- `SHOPIFY_CATALOG_CLIENT_SECRET` — OAuth client_secret for same key (different from the record ID)
 
 ## Stack
 
@@ -36,6 +38,7 @@ Required env secrets:
 - `artifacts/scenic-routes/src/components/` — MapView, AiChat, AppleWatch, McpToolsPanel
 - `artifacts/api-server/src/routes/scenic.ts` — route/merchant/shopify handlers
 - `artifacts/api-server/src/routes/anthropic.ts` — Claude SSE streaming chat route
+- `artifacts/api-server/src/routes/shopify-catalog.ts` — Shopify Global Catalog API integration (JWT token cache, REST search, MCP proxy, UCP agent profile)
 
 ## Architecture decisions
 
