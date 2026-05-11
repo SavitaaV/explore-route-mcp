@@ -191,10 +191,28 @@ export const GetMerchantGraphResponse = zod.object({
     zod.object({
       sourceId: zod.string(),
       targetId: zod.string(),
-      similarityScore: zod
+      score: zod
         .number()
-        .describe("0–1 co-purchase similarity score"),
-      sharedTags: zod.array(zod.string()),
+        .describe(
+          "0–1 combined similarity score (type affinity + proximity + catalog overlap)",
+        ),
+      proximityM: zod
+        .number()
+        .describe("Distance between merchant locations in metres"),
+      distanceKm: zod
+        .number()
+        .describe("Distance between merchant locations in kilometres"),
+      affinityReason: zod
+        .string()
+        .describe(
+          'Human-readable reason for the affinity (e.g. \"winery × restaurant\")',
+        ),
+      sharedCategories: zod
+        .array(zod.string())
+        .describe("Shopify catalog categories shared by both merchants"),
+      catalogOverlap: zod
+        .number()
+        .describe("Jaccard overlap of catalog categories (0–1)"),
     }),
   ),
 });

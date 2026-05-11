@@ -612,14 +612,27 @@ components:
           type: string
         targetId:
           type: string
-        similarityScore:
+        score:
           type: number
-          description: 0–1 co-purchase similarity score
-        sharedTags:
+          description: 0–1 combined similarity score (type affinity + proximity + catalog overlap)
+        proximityM:
+          type: number
+          description: Distance between merchant locations in metres
+        distanceKm:
+          type: number
+          description: Distance between merchant locations in kilometres
+        affinityReason:
+          type: string
+          description: Human-readable reason for the affinity (e.g. "winery × restaurant")
+        sharedCategories:
           type: array
           items:
             type: string
-      required: [sourceId, targetId, similarityScore, sharedTags]
+          description: Shopify catalog categories shared by both merchants
+        catalogOverlap:
+          type: number
+          description: Jaccard overlap of catalog categories (0–1)
+      required: [sourceId, targetId, score, proximityM, distanceKm, affinityReason, sharedCategories, catalogOverlap]
 
     MerchantGraph:
       type: object

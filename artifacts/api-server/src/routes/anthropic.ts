@@ -107,7 +107,15 @@ async function executePlanDiscovery(intent: string, city?: string): Promise<unkn
   try {
     return await computePlanDiscovery({ intent, city });
   } catch (err) {
-    return { error: String(err), intent, merchants: [], totalDistanceKm: 0, estimatedWalkMinutes: 0, source: "mock" };
+    return {
+      intent,
+      resolvedLocation: { lat: 43.2553, lng: -79.0712, name: city ?? "Niagara-on-the-Lake Old Town, ON" },
+      merchants: [],
+      totalDistanceKm: 0,
+      estimatedWalkMinutes: 0,
+      source: "mock",
+      error: String(err),
+    };
   }
 }
 

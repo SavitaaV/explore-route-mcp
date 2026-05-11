@@ -173,9 +173,18 @@ export interface MerchantNode {
 export interface MerchantEdge {
   sourceId: string;
   targetId: string;
-  /** 0–1 co-purchase similarity score */
-  similarityScore: number;
-  sharedTags: string[];
+  /** 0–1 combined similarity score (type affinity + proximity + catalog overlap) */
+  score: number;
+  /** Distance between merchant locations in metres */
+  proximityM: number;
+  /** Distance between merchant locations in kilometres */
+  distanceKm: number;
+  /** Human-readable reason for the affinity (e.g. "winery × restaurant") */
+  affinityReason: string;
+  /** Shopify catalog categories shared by both merchants */
+  sharedCategories: string[];
+  /** Jaccard overlap of catalog categories (0–1) */
+  catalogOverlap: number;
 }
 
 export interface MerchantGraph {
