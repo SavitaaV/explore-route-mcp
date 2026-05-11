@@ -479,15 +479,68 @@ router.post("/merchant-card", async (req, res) => {
   }
 });
 
-// Merchant type → product tag vocabulary (used for Jaccard similarity)
-const TYPE_TAGS: Record<string, string[]> = {
-  winery:     ["wine", "icewine", "vineyard", "tasting", "red-wine", "white-wine", "ontario-vqa", "reserve", "cellar"],
-  bakery:     ["bread", "sourdough", "pastry", "butter-tart", "fresh-baked", "artisan-bread", "organic", "local-grain"],
-  cafe:       ["coffee", "espresso", "roasted", "single-origin", "specialty-coffee", "fair-trade", "cold-brew", "latte"],
-  restaurant: ["seasonal", "farm-to-table", "local-sourcing", "ontario", "tasting-menu", "fine-dining", "chefs-table"],
-  artisan:    ["handmade", "local", "artisan", "gift", "ontario-made", "craft", "natural", "small-batch", "preserve"],
-  boutique:   ["curated", "gift-set", "souvenir", "local-art", "collectible", "unique", "theatre", "heritage"],
+// Merchant type → Mock.shop collection handle for real product tag extraction.
+// Each handle maps to a distinct corner of Mock.shop's catalog so merchants get
+// genuinely different tag sets, producing data-driven Jaccard similarity scores.
+const MERCHANT_COLLECTION: Record<string, string> = {
+  winery:     "featured",    // broad/premium selection — widest tag spread
+  restaurant: "unisex",      // broad audience appeal
+  cafe:       "tops",        // everyday accessible items
+  bakery:     "women",       // female-skewed purchase pattern
+  artisan:    "accessories", // gift-oriented curated items
+  boutique:   "shoes",       // curated footwear — highest avg price tier
 };
+
+// Fallback tag vocabulary used only if Mock.shop is unreachable
+const TYPE_TAGS_FALLBACK: Record<string, string[]> = {
+  winery:     ["wine", "icewine", "vineyard", "reserve", "cellar"],
+  bakery:     ["bread", "sourdough", "pastry", "organic", "local-grain"],
+  cafe:       ["coffee", "espresso", "single-origin", "fair-trade", "cold-brew"],
+  restaurant: ["seasonal", "farm-to-table", "tasting-menu", "fine-dining"],
+  artisan:    ["handmade", "artisan", "gift", "craft", "small-batch"],
+  boutique:   ["curated", "souvenir", "local-art", "collectible", "unique"],
+};
+
+// Fetch real product tags from a Mock.shop collection
+async function fetchCollectionTags(collectionHandle: string): Promise<string[]> {
+  const query = `{
+    collection(handle: "${collectionHandle}") {
+      products(first: 8) {
+        edges {
+          node {
+            tags
+            productType
+          }
+        }
+      }
+    }
+  }`;
+  try {
+    const res = await fetch(MOCK_SHOP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const data = (await res.json()) as {
+      data?: {
+        collection?: {
+          products?: {
+            edges?: Array<{ node: { tags: string[]; productType: string } }>;
+          };
+        };
+      };
+    };
+    const edges = data.data?.collection?.products?.edges ?? [];
+    const tagSet = new Set<string>();
+    edges.forEach((e) => {
+      e.node.tags.forEach((t) => tagSet.add(t));
+      if (e.node.productType) tagSet.add(e.node.productType);
+    });
+    return [...tagSet];
+  } catch {
+    return [];
+  }
+}
 
 // Co-purchase type affinity prior (symmetric)
 const TYPE_AFFINITY: Record<string, Record<string, number>> = {
@@ -517,22 +570,40 @@ router.get("/merchant-graph", async (req, res) => {
     (m) => m.isOnShopify && (!typeFilter || typeFilter.includes(m.type))
   );
 
-  // Fetch real price data from Mock.shop for each unique merchant type
-  const avgPriceByType: Record<string, number | null> = {};
   const uniqueTypes = [...new Set(graphMerchants.map((m) => m.type))];
-  await Promise.all(
-    uniqueTypes.map(async (type) => {
-      try {
-        const products = await fetchShopifyProducts(type);
-        const prices = products
-          .map((p) => parseFloat(p.price.replace(/[^0-9.]/g, "")))
-          .filter(Boolean);
-        avgPriceByType[type] = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
-      } catch {
-        avgPriceByType[type] = null;
-      }
-    })
-  );
+
+  // Fetch real product data from Mock.shop in parallel per merchant type:
+  // - collection tags for Jaccard feature vectors (from the type-mapped collection)
+  // - product prices for price-proximity similarity
+  const [tagsByType, avgPriceByType] = await Promise.all([
+    // Real product tags from Mock.shop collection mapped to each merchant type
+    Promise.all(
+      uniqueTypes.map(async (type) => {
+        const handle = MERCHANT_COLLECTION[type];
+        if (!handle) return [type, TYPE_TAGS_FALLBACK[type] ?? []] as const;
+        const tags = await fetchCollectionTags(handle);
+        // Graceful fallback: use TYPE_TAGS_FALLBACK if Mock.shop returns empty
+        return [type, tags.length > 0 ? tags : (TYPE_TAGS_FALLBACK[type] ?? [])] as const;
+      })
+    ).then((pairs) => Object.fromEntries(pairs) as Record<string, string[]>),
+
+    // Real average prices from Mock.shop product variants
+    Promise.all(
+      uniqueTypes.map(async (type) => {
+        try {
+          const products = await fetchShopifyProducts(type);
+          const prices = products
+            .map((p) => parseFloat(p.price.replace(/[^0-9.]/g, "")))
+            .filter(Boolean);
+          return [type, prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null] as const;
+        } catch {
+          return [type, null] as const;
+        }
+      })
+    ).then((pairs) => Object.fromEntries(pairs) as Record<string, number | null>),
+  ]);
+
+  req.log.debug({ tagsByType }, "merchant-graph: real tags fetched from Mock.shop");
 
   const nodes = graphMerchants.map((m) => ({
     id: m.id,
@@ -542,7 +613,8 @@ router.get("/merchant-graph", async (req, res) => {
     lat: m.lat,
     lng: m.lng,
     photoUrl: m.photoUrl,
-    topTags: (TYPE_TAGS[m.type] ?? []).slice(0, 5),
+    // topTags: real product tags from Mock.shop for this merchant's collection
+    topTags: (tagsByType[m.type] ?? []).slice(0, 5),
     avgPrice: avgPriceByType[m.type] ?? null,
   }));
 
@@ -557,8 +629,10 @@ router.get("/merchant-graph", async (req, res) => {
     for (let j = i + 1; j < graphMerchants.length; j++) {
       const a = graphMerchants[i];
       const b = graphMerchants[j];
-      const tagsA = TYPE_TAGS[a.type] ?? [];
-      const tagsB = TYPE_TAGS[b.type] ?? [];
+      // Use real Mock.shop product tags for Jaccard — tags come from
+      // the collection mapped to each merchant type via MERCHANT_COLLECTION
+      const tagsA = tagsByType[a.type] ?? [];
+      const tagsB = tagsByType[b.type] ?? [];
       const { score: jScore, shared } = jaccardSim(tagsA, tagsB);
 
       const typeAff = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.30;
