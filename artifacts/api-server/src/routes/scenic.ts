@@ -730,20 +730,31 @@ router.get("/places-graph", async (req, res) => {
   const PROX_THRESHOLD_M = 800; // wider for cross-city — edges are affinity not pure walk proximity
   const SKIP_TYPES = new Set(["lodging", "pharmacy", "drugstore", "gas_station", "hospital", "bank", "atm", "political", "locality", "transit_station", "subway_station"]);
 
+  const SHOPIFY_DETECTION_NOTE = "Shopify status is SIMULATED for demo purposes. In production, detection would use Shopify Partner API domain lookup or a Storefront API token per merchant. Mock.shop catalog (clothing) is used as a stand-in for what the Storefront API would return.";
+
   // Fallback: build graph from MOCK_MERCHANTS without Places API
+  // Demo: pick top merchant per type as simulated Shopify nodes
   const buildMockGraph = () => {
+    const DEMO_MOCK_TYPES = ["restaurant", "cafe", "bakery", "artisan", "winery", "boutique"];
+    const demoIds = new Set<string>();
+    for (const dt of DEMO_MOCK_TYPES) {
+      const c = MOCK_MERCHANTS.filter((m) => m.type === dt).sort((a, b) => b.rating - a.rating)[0];
+      if (c) demoIds.add(c.id);
+    }
     const nodes = MOCK_MERCHANTS.map((m) => ({
       placeId: m.id,
       name: m.name,
       type: m.type,
+      city: "Niagara" as string | undefined,
       lat: m.lat,
       lng: m.lng,
       rating: m.rating,
       userRatingsTotal: m.recentVisitors ?? 0,
       openNow: m.isOpen ?? true,
       vicinity: m.address,
-      shopifyStatus: (m.isOnShopify === false ? "ghost" : "verified") as "verified" | "ghost" | "unknown",
-      shopifyMerchantId: m.isOnShopify !== false ? m.id : null,
+      shopifyStatus: (demoIds.has(m.id) ? "verified" : "ghost") as "verified" | "ghost" | "unknown",
+      shopifySource: demoIds.has(m.id) ? "demo" : null,
+      shopifyMerchantId: demoIds.has(m.id) ? m.id : null,
       website: null as string | null,
       source: "mock" as const,
     }));
@@ -820,14 +831,24 @@ router.get("/places-graph", async (req, res) => {
       })
     );
 
+    // Demo Shopify selection: pick the highest quality-score merchant per type.
+    // This is SIMULATED — real detection would use Shopify Partner API domain lookup
+    // or Storefront API token. We mark these nodes "verified" for demo purposes only.
+    const DEMO_TYPES = ["restaurant", "cafe", "bakery", "boutique", "artisan", "winery"];
+    const demoShopifyIds = new Set<string>();
+    for (const demoType of DEMO_TYPES) {
+      const candidate = topPlaces
+        .filter((p) => googleTypesToMerchantType(p.types) === demoType)
+        .sort((a, b) => qualityScore(b) - qualityScore(a))[0];
+      if (candidate) demoShopifyIds.add(candidate.place_id);
+    }
+
     // Build nodes
     const nodes = topPlaces.map((p) => {
       const website = detailsMap.get(p.place_id)?.website ?? null;
       const type = googleTypesToMerchantType(p.types);
-      const shopifyMatch = MOCK_MERCHANTS.find((m) => nameMatch(m.name, p.name) && m.isOnShopify !== false);
-      const websiteIsShopify = website ? (website.includes("myshopify.com") || website.includes("shopify")) : false;
-      const shopifyStatus: "verified" | "ghost" | "unknown" =
-        shopifyMatch || websiteIsShopify ? "verified" : "ghost";
+      const isDemo = demoShopifyIds.has(p.place_id);
+      const shopifyStatus: "verified" | "ghost" | "unknown" = isDemo ? "verified" : "ghost";
       return {
         placeId: p.place_id,
         name: p.name,
@@ -840,7 +861,8 @@ router.get("/places-graph", async (req, res) => {
         openNow: p.opening_hours?.open_now ?? null,
         vicinity: p.vicinity ?? "",
         shopifyStatus,
-        shopifyMerchantId: shopifyMatch?.id ?? null,
+        shopifySource: isDemo ? "demo" : null,
+        shopifyMerchantId: isDemo ? p.place_id : null,
         website,
         source: "google" as const,
       };
