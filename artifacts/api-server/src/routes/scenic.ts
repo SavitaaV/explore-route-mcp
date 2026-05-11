@@ -1692,10 +1692,21 @@ router.get("/plan-discovery-route", async (req, res) => {
       })
     );
 
-    // Build result merchants
+    // Build result merchant drafts (sequential to preserve NN-path distance calc)
     let totalM = 0;
     let prev = centre;
-    const merchants = ordered.map((p) => {
+    type MerchantDraft = {
+      place: PlacesResult & { isEvent: boolean };
+      distFromStart: number;
+      shopifyStatus: "verified" | "ghost";
+      checkoutUrl: string | null;
+      chainTier: string;
+      type: string;
+      needsNameFallback: boolean;
+    };
+    const merchantDrafts: MerchantDraft[] = [];
+
+    for (const p of ordered) {
       const distFromStart = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
       const stepM = haversineMetre(prev.lat, prev.lng, p.geometry.location.lat, p.geometry.location.lng);
       totalM += stepM;
@@ -1704,6 +1715,7 @@ router.get("/plan-discovery-route", async (req, res) => {
       const website = detailsMap.get(p.place_id)?.website ?? null;
       let shopifyStatus: "verified" | "ghost" = "ghost";
       let checkoutUrl: string | null = null;
+
       if (website) {
         const domain = normalizeDomain(website);
         const catalogEntry = byDomain.get(domain)
@@ -1715,23 +1727,75 @@ router.get("/plan-discovery-route", async (req, res) => {
         }
       }
 
-      const chainTier = classifyChainTier(p.name, p.types);
+      const type = googleTypesToMerchantType(p.types);
+      const isMarketOrEvent = type === "farmer_market" || type === "market" || (p as PlacesResult & { isEvent: boolean }).isEvent;
+      const needsNameFallback = shopifyStatus === "ghost" && isMarketOrEvent;
+
+      merchantDrafts.push({
+        place: p as PlacesResult & { isEvent: boolean },
+        distFromStart,
+        shopifyStatus,
+        checkoutUrl,
+        chainTier: classifyChainTier(p.name, p.types),
+        type,
+        needsNameFallback,
+      });
+    }
+
+    // Name-based Shopify verification for market/event merchants that lack a matching website
+    await Promise.all(
+      merchantDrafts
+        .filter((d) => d.needsNameFallback)
+        .slice(0, 5) // cap to avoid rate-limiting
+        .map(async (d) => {
+          try {
+            const results = await searchCatalog(d.place.name, { limit: 1 });
+            if (results.length > 0) {
+              d.shopifyStatus = "verified";
+              d.checkoutUrl = results[0].checkoutUrl ?? null;
+            }
+          } catch { /* ignore */ }
+        })
+    );
+
+    // ISO date strings for the next N Saturdays from today (server-side)
+    function nextSaturdays(n: number): string[] {
+      const dates: string[] = [];
+      const now = new Date();
+      const daysUntilSat = ((6 - now.getDay()) + 7) % 7 || 7;
+      for (let i = 0; i < n; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() + daysUntilSat + i * 7);
+        dates.push(d.toISOString().slice(0, 10));
+      }
+      return dates;
+    }
+
+    const merchants = merchantDrafts.map((d) => {
+      const p = d.place;
+      const operatingSeason = d.type === "farmer_market" || d.type === "market"
+        ? "Saturdays, May–October · 8am–1pm"
+        : null;
+      const upcomingDates = p.isEvent ? nextSaturdays(2) : null;
+
       return {
         placeId: p.place_id,
         name: p.name,
-        type: googleTypesToMerchantType(p.types),
+        type: d.type,
         lat: p.geometry.location.lat,
         lng: p.geometry.location.lng,
         vicinity: p.vicinity ?? "",
         rating: p.rating ?? null,
         userRatingsTotal: p.user_ratings_total ?? 0,
-        distanceFromStartKm: Math.round(distFromStart / 100) / 10,
-        shopifyStatus,
-        isEvent: (p as PlacesResult & { isEvent: boolean }).isEvent,
-        chainTier,
+        distanceFromStartKm: Math.round(d.distFromStart / 100) / 10,
+        shopifyStatus: d.shopifyStatus,
+        isEvent: p.isEvent,
+        chainTier: d.chainTier,
         openNow: p.opening_hours?.open_now ?? null,
         photoUrl: null as string | null,
-        checkoutUrl,
+        checkoutUrl: d.checkoutUrl,
+        ...(operatingSeason ? { operatingSeason } : {}),
+        ...(upcomingDates ? { upcomingDates } : {}),
       };
     });
 

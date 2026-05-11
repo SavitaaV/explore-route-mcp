@@ -21,30 +21,28 @@ interface RouteContext {
   waypoints?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
-interface DiscoveryStop {
-  name: string;
-  type: string;
-  distanceFromStartKm: number;
-  shopifyStatus: "verified" | "ghost";
-  isEvent?: boolean;
-  rating?: number | null;
-}
+// plan_discovery_route tool definition for Claude
+const PLAN_DISCOVERY_TOOL = {
+  name: "plan_discovery_route",
+  description:
+    "Plan an intent-based discovery route across Ontario. Given a shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan chocolates') and an optional city, geocodes the location, searches Google Places for matching merchants and pop-up events including farmers markets, runs Shopify Global Catalog verification, and returns merchants ordered by nearest-neighbour walk path with total distance and estimated walk time. Use when the user wants to explore a theme rather than a fixed route.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      intent: {
+        type: "string",
+        description: "Shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan shops', 'craft beer')",
+      },
+      city: {
+        type: "string",
+        description: "Ontario city to discover in (e.g. 'Niagara-on-the-Lake', 'Toronto', 'Kingston'). Defaults to Niagara-on-the-Lake.",
+      },
+    },
+    required: ["intent"],
+  },
+} as const;
 
-interface DiscoveryContext {
-  intent: string;
-  location: string;
-  totalDistanceKm: number;
-  estimatedWalkMinutes: number;
-  verifiedCount: number;
-  stops: DiscoveryStop[];
-}
-
-function buildSystemPrompt(
-  routeContext?: RouteContext,
-  merchantContext?: MerchantContext[],
-  userPosition?: { lat: number; lng: number },
-  discoveryContext?: DiscoveryContext
-): string {
+function buildSystemPrompt(routeContext?: RouteContext, merchantContext?: MerchantContext[], userPosition?: { lat: number; lng: number }): string {
   const routeInfo = routeContext
     ? `Active Route: ${routeContext.summary ?? "Scenic walking route"}
 Mode: ${routeContext.mode ?? "walking"}
@@ -68,17 +66,6 @@ Waypoints: ${routeContext.waypoints?.map((w) => w.name).filter(Boolean).join(" �
     ? `User GPS: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)}`
     : "";
 
-  const discoveryInfo = discoveryContext
-    ? `
-Discovery Route (plan_discovery_route MCP tool result):
-Intent: "${discoveryContext.intent}" near ${discoveryContext.location}
-Route: ${discoveryContext.totalDistanceKm}km · ~${discoveryContext.estimatedWalkMinutes} min walk
-Stops (${discoveryContext.stops.length} total, ${discoveryContext.verifiedCount} Shopify-verified):
-${discoveryContext.stops.slice(0, 6).map((s, i) =>
-  `  ${i + 1}. ${s.name} [${s.type}]${s.isEvent ? " 🎪 EVENT" : ""} — ${s.distanceFromStartKm}km in — ${s.shopifyStatus === "verified" ? "✓ Shopify" : "ghost"}`
-).join("\n")}${discoveryContext.stops.length > 6 ? `\n  ... and ${discoveryContext.stops.length - 6} more` : ""}`
-    : "";
-
   return `You are an ambient commerce companion — not a shopping assistant, not a tour guide. You're walking alongside someone through Niagara-on-the-Lake Old Town. You know this loop and the merchants on it.
 
 Your default state is silence. You speak only when the context creates a specific, genuine reason — a timing signal, an inventory signal, a human story that makes this particular moment the right moment. When you do speak, you say one thing. Not a list. Not a card stack. One sentence that makes the person feel something, followed by one practical fact.
@@ -89,17 +76,17 @@ MCP Tools available to you:
 - get_scenic_route: fetch a walking/cycling route between two points
 - get_nearby_merchants: discover Shopify-verified merchants near a route
 - get_merchant_graph: spatially-aware commerce graph for an area
-- plan_discovery_route: intent-based route planning — given an intent (e.g. "wine tour", "farmers market") and optional city, returns a nearest-neighbour-ordered route of matching merchants verified against the Shopify Global Catalog
+- plan_discovery_route: intent-based route planning (wine tour, farmers market, artisan route, brewery tour, etc.)
 
-When a user asks for a wine tour, farmers market, artisan route, brewery tour, or any similar discovery intent, you are invoking plan_discovery_route. Narrate the result concisely — lead with what makes this collection of stops worth walking, not just a list of names.
+When the user asks for a wine tour, farmers market visit, artisan route, brewery tour, bookshop walk, or any similar discovery intent, call plan_discovery_route with the intent and city. After the tool returns, narrate the result in one or two sentences — lead with what makes this collection of stops worth walking, name the most interesting stop, and note how many are Shopify-verified.
 
 Current context:
 ${routeInfo}
 ${positionInfo}
-${merchantInfo}${discoveryInfo}
+${merchantInfo}
 
 How to respond:
-- ONLY reference merchants from the lists above. Never invent others.
+- ONLY reference merchants from the lists above or from plan_discovery_route results. Never invent others.
 - If no merchants are loaded: say the route isn't indexed yet, keep it brief.
 - Max 3 sentences per response. Often 1–2 is right.
 - No bullet points. No headers. No numbered lists. Plain conversational prose.
@@ -111,19 +98,29 @@ When someone asks "what's worth stopping for" — answer with the ONE thing that
 
 For the ghost merchant (Mariana's Ceramic Studio): she has no digital presence. Four explorers found her this week. Stopping here is literally how she gets discovered — and potentially how she gets her Shopify store.
 
-Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.
-
-When a discovery route is loaded (see "Discovery Route" section above), acknowledge it naturally — describe the character of the route in one sentence, name the most interesting stop, and note how many are Shopify-verified so the user knows where they can actually buy.`;
+Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.`;
 }
 
-// POST /api/anthropic/conversations/:id/messages — SSE streaming
+// Execute plan_discovery_route by calling the internal service
+async function executePlanDiscovery(intent: string, city?: string): Promise<unknown> {
+  const qp = new URLSearchParams({ intent });
+  if (city) qp.set("city", city);
+  try {
+    const res = await fetch(`http://localhost:8080/api/plan-discovery-route?${qp.toString()}`);
+    if (!res.ok) throw new Error(`plan-discovery-route HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    return { error: String(err), intent, merchants: [], totalDistanceKm: 0, estimatedWalkMinutes: 0, source: "mock" };
+  }
+}
+
+// POST /api/anthropic/conversations/:id/messages — SSE streaming with MCP tool-calling
 router.post("/anthropic/conversations/:id/messages", async (req, res) => {
-  const { content, routeContext, merchantContext, userPosition, discoveryContext } = req.body as {
+  const { content, routeContext, merchantContext, userPosition } = req.body as {
     content: string;
     routeContext?: RouteContext;
     merchantContext?: MerchantContext[];
     userPosition?: { lat: number; lng: number };
-    discoveryContext?: DiscoveryContext;
   };
 
   if (!content?.trim()) {
@@ -143,26 +140,75 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   };
 
   try {
-    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext);
+    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition);
 
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: systemPrompt,
+      tools: [PLAN_DISCOVERY_TOOL],
+      tool_choice: { type: "auto" },
       messages: [{ role: "user", content: content.trim() }],
     });
 
+    let toolUseId: string | null = null;
+    let toolUseName: string | null = null;
+    let inputJsonAccum = "";
+
     for await (const chunk of stream) {
-      if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+      if (chunk.type === "content_block_start" && chunk.content_block.type === "tool_use") {
+        toolUseId = chunk.content_block.id;
+        toolUseName = chunk.content_block.name;
+        sendEvent("tool_use", { tool: toolUseName });
+      } else if (chunk.type === "content_block_delta" && chunk.delta.type === "input_json_delta") {
+        inputJsonAccum += chunk.delta.partial_json;
+      } else if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
         sendEvent("delta", { text: chunk.delta.text });
       }
     }
 
-    const finalMessage = await stream.finalMessage();
-    sendEvent("done", {
-      usage: finalMessage.usage,
-      stopReason: finalMessage.stop_reason,
-    });
+    const firstMsg = await stream.finalMessage();
+
+    if (firstMsg.stop_reason === "tool_use" && toolUseId && toolUseName === "plan_discovery_route") {
+      let toolInput: { intent?: string; city?: string } = {};
+      try { toolInput = JSON.parse(inputJsonAccum || "{}"); } catch { /* use defaults */ }
+
+      const intent = toolInput.intent ?? content.trim();
+      const city = toolInput.city;
+
+      // Execute the tool
+      const routeData = await executePlanDiscovery(intent, city);
+
+      // Send discovery_result SSE event for the frontend to update the map
+      sendEvent("discovery_result", routeData);
+
+      // Follow-up Claude call — narrate the discovery result
+      const followStream = await anthropic.messages.stream({
+        model: "claude-sonnet-4-6",
+        max_tokens: 512,
+        system: systemPrompt,
+        tools: [PLAN_DISCOVERY_TOOL],
+        messages: [
+          { role: "user", content: content.trim() },
+          { role: "assistant", content: firstMsg.content },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: toolUseId, content: JSON.stringify(routeData) }],
+          },
+        ],
+      });
+
+      for await (const chunk of followStream) {
+        if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+          sendEvent("delta", { text: chunk.delta.text });
+        }
+      }
+
+      const followMsg = await followStream.finalMessage();
+      sendEvent("done", { usage: followMsg.usage, stopReason: followMsg.stop_reason });
+    } else {
+      sendEvent("done", { usage: firstMsg.usage, stopReason: firstMsg.stop_reason });
+    }
   } catch (err) {
     req.log.error({ err }, "Anthropic streaming error");
     sendEvent("error", { message: err instanceof Error ? err.message : "Unknown error" });

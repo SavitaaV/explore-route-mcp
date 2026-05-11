@@ -250,6 +250,18 @@ export const PlanDiscoveryRouteResponse = zod.object({
       openNow: zod.boolean().nullable(),
       photoUrl: zod.string().nullish(),
       checkoutUrl: zod.string().nullish(),
+      operatingSeason: zod
+        .string()
+        .nullish()
+        .describe(
+          'Human-readable operating season (e.g. \"Saturdays, May–October · 8am–1pm\") — populated for farmer_market and market types',
+        ),
+      upcomingDates: zod
+        .array(zod.string())
+        .nullish()
+        .describe(
+          "ISO date strings for upcoming event occurrences — populated for isEvent=true merchants",
+        ),
     }),
   ),
   totalDistanceKm: zod.number(),

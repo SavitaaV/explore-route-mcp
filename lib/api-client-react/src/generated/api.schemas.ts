@@ -215,6 +215,13 @@ export interface DiscoveryMerchant {
   photoUrl?: string | null;
   /** @nullable */
   checkoutUrl?: string | null;
+  /**
+   * Human-readable operating season (e.g. "Saturdays, May–October · 8am–1pm") — populated for farmer_market and market types
+   * @nullable
+   */
+  operatingSeason?: string | null;
+  /** ISO date strings for upcoming event occurrences — populated for isEvent=true merchants */
+  upcomingDates?: string[] | null;
 }
 
 export type DiscoveryRouteResolvedLocation = {

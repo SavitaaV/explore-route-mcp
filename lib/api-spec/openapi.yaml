@@ -675,6 +675,15 @@ components:
           type: ["string", "null"]
         checkoutUrl:
           type: ["string", "null"]
+        operatingSeason:
+          type: ["string", "null"]
+          description: Human-readable operating season (e.g. "Saturdays, May–October · 8am–1pm") — populated for farmer_market and market types
+        upcomingDates:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: ISO date strings for upcoming event occurrences — populated for isEvent=true merchants
       required: [placeId, name, type, lat, lng, vicinity, rating, userRatingsTotal, distanceFromStartKm, shopifyStatus, isEvent, chainTier, openNow]
 
     DiscoveryRoute:

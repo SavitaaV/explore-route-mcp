@@ -78,6 +78,7 @@ interface AiChatProps {
   userPosition?: { lat: number; lng: number; progress?: number };
   onMerchantFocus?: (merchantId: string) => void;
   onDiscoveryRequest?: (intent: string, city?: string) => void;
+  onDiscoveryResult?: (route: DiscoveryRouteData) => void;
   discoveryRoute?: DiscoveryRouteData | null;
   discoveryLoading?: boolean;
 }
@@ -241,29 +242,6 @@ function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
 }
 
 // ── Discovery intent detection ──────────────────────────────────────────────
-const DISCOVERY_PATTERNS: Array<{ regex: RegExp; intent: string }> = [
-  { regex: /wine\s+tour|winery|vineyard|wine\s+tasting/i, intent: "wine tour" },
-  { regex: /farmer[s']?\s+market|local\s+market|produce\s+market/i, intent: "farmers market" },
-  { regex: /artisan|craft\s+shop|handmade|local\s+maker/i, intent: "artisan shops" },
-  { regex: /coffee\s+tour|specialty\s+coffee|coffee\s+hop/i, intent: "specialty coffee" },
-  { regex: /bakery\s+tour|bread|pastry\s+tour/i, intent: "artisan bakery" },
-  { regex: /chocolate|confectionery|sweet\s+shop/i, intent: "chocolate artisan" },
-  { regex: /craft\s+beer|brewery\s+tour|taproom/i, intent: "craft brewery" },
-  { regex: /bookshop|bookstore\s+tour|independent\s+book/i, intent: "independent bookstore" },
-  { regex: /gift\s+shop|boutique\s+tour|souvenir/i, intent: "boutique gift shop" },
-  { regex: /plan\s+(a\s+)?discovery|discover\s+(local|merchants|shops)/i, intent: "local shops" },
-];
-
-function detectDiscoveryIntent(text: string): { intent: string; city?: string } | null {
-  for (const { regex, intent } of DISCOVERY_PATTERNS) {
-    if (regex.test(text)) {
-      // Try to extract a city name after "in", "near", "around"
-      const cityMatch = text.match(/(?:in|near|around|at)\s+([A-Z][a-z]+(?:[\s-][A-Z]?[a-z]+)*)/);
-      return { intent, city: cityMatch?.[1] };
-    }
-  }
-  return null;
-}
 
 // ── DiscoveryLoadingCard ─────────────────────────────────────────────────────
 function DiscoveryLoadingCard({ intent, city }: { intent: string; city?: string }) {
@@ -528,7 +506,7 @@ export function AiChat({
   merchants, routeContext, journeyProgress, journeyStarted,
   mcpEnabled, onMcpEnable, onRouteRequest, onStartJourney,
   userPosition, onMerchantFocus,
-  onDiscoveryRequest, discoveryRoute, discoveryLoading,
+  onDiscoveryRequest, onDiscoveryResult, discoveryRoute, discoveryLoading,
 }: AiChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
@@ -540,7 +518,6 @@ export function AiChat({
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
   const prevRouteRef = useRef<RouteContext | null>(null);
   const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
-  const pendingDiscoveryIntentRef = useRef<{ intent: string; city?: string } | null>(null);
 
   useEffect(() => {
     if (messages.length > messageCountRef.current) {
@@ -686,11 +663,10 @@ export function AiChat({
     ]);
   }, []);
 
-  // Discovery route arrived → replace loading card with result card
+  // Discovery route prop changed (legacy path when discoveryRoute comes from outside) → replace loading card
   useEffect(() => {
     if (!discoveryRoute || discoveryRoute === prevDiscoveryRef.current) return;
     prevDiscoveryRef.current = discoveryRoute;
-    const intent = pendingDiscoveryIntentRef.current;
 
     setMessages((prev) => {
       // Replace the loading card (if present) with the result card
@@ -702,7 +678,7 @@ export function AiChat({
           {
             id: `dr-${Date.now()}`,
             role: "assistant" as const,
-            content: `Found ${discoveryRoute.merchants.length} stops for your ${intent?.intent ?? discoveryRoute.intent} route — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
+            content: `Found ${discoveryRoute.merchants.length} stops for your ${discoveryRoute.intent} route — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
             timestamp: new Date(),
             skipSources: true,
           },
@@ -721,7 +697,7 @@ export function AiChat({
       updated[realIdx] = {
         ...updated[realIdx],
         discoveryLoadingCard: undefined,
-        content: `Found ${discoveryRoute.merchants.length} stops for your ${intent?.intent ?? discoveryRoute.intent} — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
+        content: `Found ${discoveryRoute.merchants.length} stops for your ${discoveryRoute.intent} — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
         skipSources: true,
       };
       updated.splice(realIdx + 1, 0, {
@@ -736,60 +712,22 @@ export function AiChat({
     });
   }, [discoveryRoute]);
 
+
+
   const sendMessage = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || isStreaming) return;
     setInput("");
 
-    // Check for discovery intent first
-    const discovery = detectDiscoveryIntent(content);
-    if (discovery && onDiscoveryRequest) {
-      pendingDiscoveryIntentRef.current = discovery;
-      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
-      const loadingId = `dl-${Date.now()}`;
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        {
-          id: loadingId,
-          role: "assistant" as const,
-          content: "",
-          timestamp: new Date(),
-          discoveryLoadingCard: { intent: discovery.intent, city: discovery.city },
-          skipSources: true,
-        },
-      ]);
-      onDiscoveryRequest(discovery.intent, discovery.city);
-      return;
-    }
-
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
-
-    const assistantId = `a-${Date.now()}`;
-    setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", timestamp: new Date(), streaming: true, skipSources: true }]);
     setIsStreaming(true);
     abortRef.current = new AbortController();
 
-    try {
-      const discoveryCtx = discoveryRoute
-        ? {
-            intent: discoveryRoute.intent,
-            location: discoveryRoute.resolvedLocation.name,
-            totalDistanceKm: discoveryRoute.totalDistanceKm,
-            estimatedWalkMinutes: discoveryRoute.estimatedWalkMinutes,
-            verifiedCount: discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length,
-            stops: discoveryRoute.merchants.map((m) => ({
-              name: m.name,
-              type: m.type,
-              distanceFromStartKm: m.distanceFromStartKm,
-              shopifyStatus: m.shopifyStatus,
-              isEvent: m.isEvent,
-              rating: m.rating,
-            })),
-          }
-        : undefined;
+    let narrativeMsgId: string | null = null;
+    let fullText = "";
 
+    try {
       const res = await fetch(`${BASE_URL}/api/anthropic/conversations/1/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -799,7 +737,6 @@ export function AiChat({
           routeContext,
           merchantContext: merchants.map((m) => ({ id: m.id, name: m.name, type: m.type, address: m.address, description: m.description, rating: m.rating, walkMinutes: m.walkMinutes })),
           userPosition,
-          discoveryContext: discoveryCtx,
         }),
       });
 
@@ -807,7 +744,7 @@ export function AiChat({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let fullText = "";
+      let currentEventType = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -815,24 +752,88 @@ export function AiChat({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
+
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
+          if (line.startsWith("event: ")) {
+            currentEventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
             try {
-              const data = JSON.parse(line.slice(6)) as { text?: string };
-              if (data.text) { fullText += data.text; setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: fullText } : m)); }
-            } catch { /* ignore */ }
+              const rawData = JSON.parse(line.slice(6)) as Record<string, unknown>;
+
+              if (currentEventType === "tool_use") {
+                // Claude is invoking plan_discovery_route — show loading card
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `dl-${Date.now()}`,
+                    role: "assistant" as const,
+                    content: "",
+                    timestamp: new Date(),
+                    discoveryLoadingCard: { intent: (rawData.tool as string | undefined) ?? "discovery" },
+                    skipSources: true,
+                  },
+                ]);
+              } else if (currentEventType === "discovery_result") {
+                // Tool executed — swap loading card with result card, update map
+                const routeData = rawData as unknown as DiscoveryRouteData;
+                setMessages((prev) => {
+                  const revIdx = [...prev].reverse().findIndex((m) => m.discoveryLoadingCard);
+                  const resultCard: ChatMessage = {
+                    id: `dr-${Date.now()}`,
+                    role: "assistant" as const,
+                    content: "",
+                    timestamp: new Date(),
+                    discoveryResultCard: routeData,
+                    skipSources: true,
+                  };
+                  if (revIdx < 0) return [...prev, resultCard];
+                  const realIdx = prev.length - 1 - revIdx;
+                  const updated = [...prev];
+                  updated.splice(realIdx, 1, resultCard);
+                  return updated;
+                });
+                onDiscoveryResult?.(routeData);
+              } else if (currentEventType === "delta" || currentEventType === "") {
+                const text = (rawData as { text?: string }).text;
+                if (text) {
+                  fullText += text;
+                  if (!narrativeMsgId) {
+                    narrativeMsgId = `a-${Date.now()}`;
+                    const id = narrativeMsgId;
+                    setMessages((prev) => [
+                      ...prev,
+                      { id, role: "assistant" as const, content: fullText, timestamp: new Date(), streaming: true, skipSources: true },
+                    ]);
+                  } else {
+                    const id = narrativeMsgId;
+                    setMessages((prev) => prev.map((m) => m.id === id ? { ...m, content: fullText } : m));
+                  }
+                }
+              }
+            } catch { /* ignore malformed SSE data */ }
+          } else if (line === "") {
+            currentEventType = "";
           }
         }
       }
-      setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, streaming: false, skipSources: false } : m));
+
+      if (narrativeMsgId) {
+        const id = narrativeMsgId;
+        setMessages((prev) => prev.map((m) => m.id === id ? { ...m, streaming: false, skipSources: false } : m));
+      }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setMessages((prev) => prev.map((m) => m.id === assistantId ? { ...m, content: "Sorry, couldn't reach Claude. Try again.", streaming: false } : m));
+        if (narrativeMsgId) {
+          const id = narrativeMsgId;
+          setMessages((prev) => prev.map((m) => m.id === id ? { ...m, content: "Sorry, couldn't reach Claude. Try again.", streaming: false } : m));
+        } else {
+          setMessages((prev) => [...prev, { id: `err-${Date.now()}`, role: "assistant" as const, content: "Sorry, couldn't reach Claude. Try again.", timestamp: new Date() }]);
+        }
       }
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, merchants, routeContext, userPosition]);
+  }, [input, isStreaming, merchants, routeContext, userPosition, onDiscoveryResult]);
 
   const hasRoute = !!routeContext;
   const suggestedPrompts = hasRoute
