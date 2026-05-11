@@ -56,14 +56,9 @@ interface AiChatProps {
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-const QUICK_CITIES = [
-  { label: "🍷 Niagara-on-the-Lake", value: "Niagara-on-the-Lake, ON" },
-  { label: "🏔️ Banff, AB", value: "Banff, AB" },
-  { label: "🏛️ Old Quebec City", value: "Old Quebec City, QC" },
-  { label: "🌲 Whistler, BC", value: "Whistler, BC" },
-  { label: "🌊 Victoria, BC", value: "Victoria, BC" },
-  { label: "🍁 Ottawa, ON", value: "Ottawa, ON" },
-];
+// v1 is locked to Niagara-on-the-Lake Old Town
+const NOTL_ORIGIN = "Market Square, Niagara-on-the-Lake, ON";
+const NOTL_DESTINATION = "Fort George National Historic Site, Niagara-on-the-Lake, ON";
 
 function getMerchantEmoji(type: string) {
   switch (type) {
@@ -230,12 +225,12 @@ function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismi
         </div>
       </div>
       <p style={{ fontSize: 11, color: "#065f46", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Allow Claude to access your route context and surface nearby independent merchant recommendations across Canada via MCP?
+        Allow Claude to access route context and surface Shopify-verified merchants along the NOTL Old Town walking loop via MCP?
       </p>
       <div style={{ fontSize: 10, color: "#047857", marginBottom: 12, lineHeight: 1.6 }}>
-        ✓ Only Shopify-verified merchants<br />
-        ✓ Works in any Canadian town or city<br />
-        ✓ Turn off recommendations any time
+        ✓ Only Shopify-verified merchants on the route<br />
+        ✓ Inventory confidence scores, real stories<br />
+        ✓ Quiet by default — nudges only when worth it
       </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onEnable} style={{ flex: 1, padding: "9px 0", borderRadius: 12, background: "linear-gradient(135deg, #059669, #34d399)", color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer" }}>
@@ -270,80 +265,24 @@ function McpActivatedCard({ routeContext }: { routeContext: RouteContext | null 
 }
 
 function LocationCard({ onSubmit }: { onSubmit: (location: string, mode: string) => void }) {
-  const [location, setLocation] = useState("");
-  const [mode, setMode] = useState("walking");
-
-  const handleSubmit = () => {
-    const loc = location.trim();
-    if (!loc) return;
-    onSubmit(loc, mode);
-  };
-
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-        <Navigation style={{ width: 14, height: 14, color: "#6366f1" }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>Where in Canada?</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        <Navigation style={{ width: 13, height: 13, color: "#6366f1" }} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>Niagara-on-the-Lake Old Town</span>
       </div>
-
-      {/* Quick city chips */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
-        {QUICK_CITIES.map((c) => (
-          <button
-            key={c.value}
-            onClick={() => onSubmit(c.value, mode)}
-            style={{
-              padding: "4px 8px", borderRadius: 20, fontSize: 10, fontWeight: 500,
-              background: "#f3f4f6", color: "#374151",
-              border: "1px solid #e5e7eb", cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Custom location input */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        <input
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
-          placeholder="Enter any Canadian city or town…"
-          style={{ flex: 1, padding: "7px 10px", borderRadius: 10, border: "1px solid #d1d5db", fontSize: 11, color: "#111827", outline: "none", background: "#f9fafb" }}
-        />
-      </div>
-
-      {/* Mode toggle */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {[{ value: "walking", label: "🚶 Walk" }, { value: "bicycling", label: "🚴 Cycle" }, { value: "driving", label: "🚗 Drive" }].map((m) => (
-          <button
-            key={m.value}
-            onClick={() => setMode(m.value)}
-            style={{
-              flex: 1, padding: "5px 0", borderRadius: 8, fontSize: 10, fontWeight: 600,
-              background: mode === m.value ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#f3f4f6",
-              color: mode === m.value ? "#fff" : "#6b7280",
-              border: "none", cursor: "pointer",
-            }}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
+      <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 12px", lineHeight: 1.5 }}>
+        Market Square → Fort George · 3.2 km · ~38 min walk
+      </p>
       <button
-        onClick={handleSubmit}
-        disabled={!location.trim()}
+        onClick={() => onSubmit(NOTL_ORIGIN, "walking")}
         style={{
-          width: "100%", padding: "9px 0", borderRadius: 12,
-          background: location.trim() ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb",
-          color: location.trim() ? "#fff" : "#9ca3af",
-          fontSize: 12, fontWeight: 700, border: "none", cursor: location.trim() ? "pointer" : "default",
+          width: "100%", padding: "10px 0", borderRadius: 12,
+          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+          color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
         }}
       >
-        Plan my route →
+        🗺️ Load the NOTL route →
       </button>
     </div>
   );
@@ -410,23 +349,17 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
 
 const INITIAL_MESSAGES: ChatMessage[] = [
   {
-    id: "u0",
-    role: "user",
-    content: "Hey! I want to explore somewhere scenic in Canada today — maybe a walk? Any suggestions?",
-    timestamp: new Date(Date.now() - 90000),
-  },
-  {
     id: "a0",
     role: "assistant",
-    content: "Great idea! Canada has incredible places to explore on foot — from Old Quebec City's cobblestone ramparts to Banff's Bow River Trail, Victoria's harbour walk, Whistler Village, or the back streets of Niagara-on-the-Lake Old Town.\n\nI can do more than suggest though. I have access to Explore Route MCP — it maps a scenic route wherever you want to go and surfaces nearby independent merchants as you walk: local artisans, cafés, boutiques, wineries. Shopify-verified only. I'll keep it quiet — a nudge when something's genuinely worth it, not a feed of ads.\n\nYou can turn recommendations off any time. Want me to enable it?",
-    timestamp: new Date(Date.now() - 85000),
+    content: "This is a prototype demonstrating Shopify's agentic commerce primitives — set in Niagara-on-the-Lake Old Town.\n\nI can walk you through 8 merchants on a real 3.2 km loop: Queen Street artisans, Balzac's, Treadwell, Peller Estates. Inventory confidence scores, human stories, and one business not yet on Shopify.\n\nEnable Explore Route MCP to begin.",
+    timestamp: new Date(),
     skipSources: true,
   },
   {
     id: "perm0",
     role: "assistant",
     content: "",
-    timestamp: new Date(Date.now() - 84000),
+    timestamp: new Date(),
     permissionCard: true,
     skipSources: true,
   },
@@ -461,8 +394,7 @@ export function AiChat({
       if (prev.some((m) => m.mcpActivated)) return prev;
       return [
         ...prev,
-        { id: "u1", role: "user", content: "Yes, enable it!", timestamp: new Date(), skipSources: true },
-        { id: "a1", role: "assistant", content: "Done — Explore Route MCP is live.\n\nNow tell me where you'd like to explore. Pick a destination below or type any Canadian city or town.", timestamp: new Date(), mcpActivated: true, skipSources: true },
+        { id: "a1", role: "assistant", content: "MCP enabled. Load the route to begin — I'll index the merchants along the loop and surface them as you walk.", timestamp: new Date(), mcpActivated: true, skipSources: true },
         { id: "loc0", role: "assistant", content: "", timestamp: new Date(), locationCard: true, skipSources: true },
       ];
     });
@@ -547,19 +479,18 @@ export function AiChat({
     }
   }, [journeyProgress, journeyStarted, mcpEnabled, merchants, milestonesFired]);
 
-  const handleLocationSubmit = useCallback((location: string, mode: string) => {
-    setPendingLocation(location);
-    // Hide the location card
+  const handleLocationSubmit = useCallback((_location: string, mode: string) => {
+    // v1 is locked to NOTL — always load the same loop
+    setPendingLocation("Niagara-on-the-Lake Old Town");
     setMessages((prev) => prev.map((m) => m.locationCard ? { ...m, locationCard: false } : m));
-    // Show loading message
     setMessages((prev) => [...prev, {
       id: "a-loading",
       role: "assistant",
-      content: `Mapping your ${mode} route in ${location}…`,
+      content: "Mapping the NOTL Old Town walking loop…",
       timestamp: new Date(),
       skipSources: true,
     }]);
-    onRouteRequest(location, location, mode);
+    onRouteRequest(NOTL_ORIGIN, NOTL_DESTINATION, mode);
   }, [onRouteRequest]);
 
   const handleEnable = useCallback(() => { onMcpEnable(); }, [onMcpEnable]);
@@ -629,8 +560,8 @@ export function AiChat({
 
   const hasRoute = !!routeContext;
   const suggestedPrompts = hasRoute
-    ? ["What's worth stopping at here?", "Any good coffee nearby?", "Quiet mode — pause recommendations"]
-    : ["Tell me about Banff on foot", "Best walks in Quebec City?"];
+    ? ["What's the best stop on this route?", "Tell me about the winery", "Which merchant has the best story?"]
+    : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#f5f5f7" }}>
