@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { computePlanDiscovery } from "./scenic";
 
 const router = Router();
 
@@ -101,14 +102,10 @@ For the ghost merchant (Mariana's Ceramic Studio): she has no digital presence. 
 Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.`;
 }
 
-// Execute plan_discovery_route by calling the internal service
+// Execute plan_discovery_route by calling the logic function directly (no HTTP loopback)
 async function executePlanDiscovery(intent: string, city?: string): Promise<unknown> {
-  const qp = new URLSearchParams({ intent });
-  if (city) qp.set("city", city);
   try {
-    const res = await fetch(`http://localhost:8080/api/plan-discovery-route?${qp.toString()}`);
-    if (!res.ok) throw new Error(`plan-discovery-route HTTP ${res.status}`);
-    return await res.json();
+    return await computePlanDiscovery({ intent, city });
   } catch (err) {
     return { error: String(err), intent, merchants: [], totalDistanceKm: 0, estimatedWalkMinutes: 0, source: "mock" };
   }

@@ -625,12 +625,13 @@ const TYPE_TAGS: Record<string, string[]> = {
 
 // Co-purchase type affinity prior (symmetric)
 const TYPE_AFFINITY: Record<string, Record<string, number>> = {
-  winery:     { winery: 1.0, restaurant: 0.80, artisan: 0.60, boutique: 0.55, cafe: 0.35, bakery: 0.25 },
-  restaurant: { winery: 0.80, restaurant: 1.0, cafe: 0.65, bakery: 0.60, artisan: 0.45, boutique: 0.35 },
-  cafe:       { cafe: 1.0, bakery: 0.75, restaurant: 0.65, artisan: 0.50, boutique: 0.45, winery: 0.35 },
-  bakery:     { bakery: 1.0, cafe: 0.75, restaurant: 0.60, artisan: 0.50, boutique: 0.40, winery: 0.25 },
-  artisan:    { artisan: 1.0, boutique: 0.70, winery: 0.60, cafe: 0.50, bakery: 0.50, restaurant: 0.45 },
-  boutique:   { boutique: 1.0, artisan: 0.70, winery: 0.55, cafe: 0.45, bakery: 0.40, restaurant: 0.35 },
+  winery:       { winery: 1.0, restaurant: 0.80, artisan: 0.60, boutique: 0.55, cafe: 0.35, bakery: 0.25, farmer_market: 0.55 },
+  restaurant:   { winery: 0.80, restaurant: 1.0, cafe: 0.65, bakery: 0.60, artisan: 0.45, boutique: 0.35, farmer_market: 0.50 },
+  cafe:         { cafe: 1.0, bakery: 0.75, restaurant: 0.65, artisan: 0.50, boutique: 0.45, winery: 0.35, farmer_market: 0.60 },
+  bakery:       { bakery: 1.0, cafe: 0.75, restaurant: 0.60, artisan: 0.50, boutique: 0.40, winery: 0.25, farmer_market: 0.70 },
+  artisan:      { artisan: 1.0, boutique: 0.70, winery: 0.60, cafe: 0.50, bakery: 0.50, restaurant: 0.45, farmer_market: 0.80 },
+  boutique:     { boutique: 1.0, artisan: 0.70, winery: 0.55, cafe: 0.45, bakery: 0.40, restaurant: 0.35, farmer_market: 0.65 },
+  farmer_market: { farmer_market: 1.0, artisan: 0.80, bakery: 0.70, cafe: 0.60, boutique: 0.65, restaurant: 0.50, winery: 0.55 },
 };
 
 function jaccardSim(a: string[], b: string[]): { score: number; shared: string[] } {
@@ -715,6 +716,7 @@ interface PlacesResult {
 
 // Map Google Places type arrays → our merchant type
 function googleTypesToMerchantType(types: string[]): string {
+  if (types.includes("farmer_market") || types.includes("market")) return "farmer_market";
   if (types.includes("bar") || types.includes("liquor_store")) return "winery";
   if (types.includes("bakery") || types.includes("meal_takeaway")) return "bakery";
   if (types.includes("cafe") || types.includes("coffee_shop")) return "cafe";
@@ -985,12 +987,13 @@ const ONTARIO_CATALOG_QUERIES: Array<{ q: string; category: string }> = [
 
 // Map merchant type → catalog category for mock-graph enrichment
 const TYPE_CATEGORY: Record<string, string> = {
-  winery:     "wine",
-  cafe:       "coffee",
-  bakery:     "artisan-food",
-  restaurant: "artisan-food",
-  artisan:    "artisan-food",
-  boutique:   "gifts",
+  winery:        "wine",
+  cafe:          "coffee",
+  bakery:        "artisan-food",
+  restaurant:    "artisan-food",
+  artisan:       "artisan-food",
+  boutique:      "gifts",
+  farmer_market: "artisan-food",
 };
 
 interface CatalogNodeProduct {
@@ -1098,7 +1101,7 @@ router.get("/places-graph", async (req, res) => {
     });
     const edges: Array<{
       sourceId: string; targetId: string; score: number;
-      proximityM: number; affinityReason: string;
+      proximityM: number; distanceKm: number; affinityReason: string;
       sharedCategories: string[]; catalogOverlap: number;
     }> = [];
     for (let i = 0; i < nodes.length; i++) {
@@ -1351,7 +1354,7 @@ router.get("/places-graph", async (req, res) => {
     // ghost↔any: type affinity + city proximity only (no catalog overlap)
     const edges: Array<{
       sourceId: string; targetId: string; score: number;
-      proximityM: number; affinityReason: string;
+      proximityM: number; distanceKm: number; affinityReason: string;
       sharedCategories: string[]; catalogOverlap: number;
     }> = [];
 
@@ -1560,6 +1563,253 @@ function buildMockDiscoveryRoute(
   };
 }
 
+// ISO date strings for the next N Saturdays from today
+function nextSaturdays(n: number): string[] {
+  const dates: string[] = [];
+  const now = new Date();
+  const daysUntilSat = ((6 - now.getDay()) + 7) % 7 || 7;
+  for (let i = 0; i < n; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + daysUntilSat + i * 7);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+// Exported: compute discovery route without HTTP loopback — called directly by anthropic.ts
+export async function computePlanDiscovery(params: {
+  intent: string;
+  city?: string;
+  lat?: number;
+  lng?: number;
+  radius?: number;
+}): Promise<unknown> {
+  const { intent, city } = params;
+  const radiusM = params.radius ?? 2000;
+  const clampedRadius = Number.isFinite(radiusM) ? Math.min(Math.max(radiusM, 500), 10_000) : 2000;
+
+  // Resolve centre
+  let centre: { lat: number; lng: number; name: string };
+  const latN = params.lat ?? NaN;
+  const lngN = params.lng ?? NaN;
+  if (Number.isFinite(latN) && Number.isFinite(lngN) && latN >= 41 && latN <= 57) {
+    centre = { lat: latN, lng: lngN, name: city ?? "Custom location" };
+  } else if (city?.trim()) {
+    const geocoded = await geocodeLocation(city.trim());
+    if (!geocoded) throw new Error(`Could not geocode city: "${city}"`);
+    centre = geocoded;
+  } else {
+    centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
+  }
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    logger.info({ intent, centre }, "plan-discovery-route: no API key, using mock");
+    return buildMockDiscoveryRoute(intent, centre);
+  }
+
+  const { query, types } = intentToSearchTerms(intent);
+
+  // 1. Text search for the intent
+  const textUrl =
+    `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+    `?query=${encodeURIComponent(query + " " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius}&key=${GOOGLE_MAPS_API_KEY}`;
+  const textD = await fetch(textUrl)
+    .then((r) => r.json() as Promise<{ status: string; results?: PlacesResult[] }>)
+    .catch(() => ({ status: "FAIL", results: [] as PlacesResult[] }));
+
+  // 2. Nearby search for each type
+  const nearbyBatches = await Promise.all(
+    types.map((t) =>
+      fetch(
+        `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+        `?location=${centre.lat},${centre.lng}&radius=${clampedRadius}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`
+      )
+        .then((r) => r.json() as Promise<{ status: string; results?: PlacesResult[] }>)
+        .then((d) => d.results ?? [])
+        .catch(() => [] as PlacesResult[])
+    )
+  );
+
+  // 3. Farmers-market / event text search (supplemental)
+  const eventD = await fetch(
+    `https://maps.googleapis.com/maps/api/place/textsearch/json` +
+    `?query=${encodeURIComponent("farmers market event pop-up " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius * 1.5}&key=${GOOGLE_MAPS_API_KEY}`
+  )
+    .then((r) => r.json() as Promise<{ status: string; results?: PlacesResult[] }>)
+    .catch(() => ({ status: "FAIL", results: [] as PlacesResult[] }));
+
+  // Merge + deduplicate
+  const seen = new Set<string>();
+  const SKIP_DISC = new Set([
+    "lodging", "pharmacy", "drugstore", "gas_station", "hospital",
+    "bank", "atm", "political", "locality", "transit_station",
+  ]);
+  const allPlaces: (PlacesResult & { isEvent: boolean })[] = [];
+
+  const addPlaces = (results: PlacesResult[], isEvent: boolean) => {
+    for (const p of results) {
+      if (seen.has(p.place_id)) continue;
+      if (p.types.some((t) => SKIP_DISC.has(t))) continue;
+      if (isEnterpriseChain(p.name)) continue;
+      const distM = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
+      if (distM > clampedRadius * 1.5) continue;
+      seen.add(p.place_id);
+      allPlaces.push({ ...p, isEvent });
+    }
+  };
+
+  addPlaces(textD.results ?? [], false);
+  for (const batch of nearbyBatches) addPlaces(batch, false);
+  addPlaces(
+    (eventD.results ?? []).filter((p) => /market|event|pop.up|festival|fair/i.test(p.name)),
+    true
+  );
+
+  if (allPlaces.length === 0) {
+    logger.info({ intent, centre }, "plan-discovery-route: no Places results, using mock");
+    return buildMockDiscoveryRoute(intent, centre);
+  }
+
+  // Quality-sort → cap at 20 → NN-order
+  allPlaces.sort((a, b) => {
+    const qa = (a.rating ?? 3.5) * Math.log((a.user_ratings_total ?? 0) + 1);
+    const qb = (b.rating ?? 3.5) * Math.log((b.user_ratings_total ?? 0) + 1);
+    return qb - qa;
+  });
+  // Lift geometry.location lat/lng to top-level so nearestNeighborOrder can sort by distance
+  const withLatLng = allPlaces.slice(0, 20).map((p) => ({
+    ...p,
+    lat: p.geometry.location.lat,
+    lng: p.geometry.location.lng,
+  }));
+  const ordered = nearestNeighborOrder(centre, withLatLng);
+
+  // Shopify domain verification
+  const { byDomain } = await fetchOntarioCatalog().catch(() => ({
+    byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
+  }));
+
+  // Place Details (website) in parallel
+  const detailsMap = new Map<string, { website?: string }>();
+  await Promise.all(
+    ordered.map(async (p) => {
+      try {
+        const r = await fetch(
+          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website&key=${GOOGLE_MAPS_API_KEY}`
+        );
+        const d = (await r.json()) as { result?: { website?: string } };
+        if (d.result) detailsMap.set(p.place_id, d.result);
+      } catch { /* skip */ }
+    })
+  );
+
+  // Build merchant drafts (sequential to preserve NN-path distance calc)
+  type MerchantDraft = {
+    place: PlacesResult & { isEvent: boolean };
+    distFromStart: number;
+    shopifyStatus: "verified" | "ghost";
+    checkoutUrl: string | null;
+    chainTier: string;
+    type: string;
+    needsNameFallback: boolean;
+  };
+  let totalM = 0;
+  let prev: { lat: number; lng: number } = centre;
+  const merchantDrafts: MerchantDraft[] = [];
+
+  for (const p of ordered) {
+    const distFromStart = haversineMetre(centre.lat, centre.lng, p.lat, p.lng);
+    totalM += haversineMetre(prev.lat, prev.lng, p.lat, p.lng);
+    prev = { lat: p.lat, lng: p.lng };
+
+    const website = detailsMap.get(p.place_id)?.website ?? null;
+    let shopifyStatus: "verified" | "ghost" = "ghost";
+    let checkoutUrl: string | null = null;
+
+    if (website) {
+      const domain = normalizeDomain(website);
+      const entry = byDomain.get(domain)
+        ?? byDomain.get(domain.replace(/^shop\./, ""))
+        ?? byDomain.get(domain.replace(/^store\./, ""));
+      if (entry) { shopifyStatus = "verified"; checkoutUrl = entry.products[0]?.checkoutUrl ?? null; }
+    }
+
+    const type = googleTypesToMerchantType(p.types);
+    // farmer_market type (including events named as markets) and isEvent flag both trigger name-based fallback
+    const needsNameFallback = shopifyStatus === "ghost" && (type === "farmer_market" || p.isEvent);
+
+    merchantDrafts.push({
+      place: p,
+      distFromStart,
+      shopifyStatus,
+      checkoutUrl,
+      chainTier: classifyChainTier(p.name, p.types),
+      type,
+      needsNameFallback,
+    });
+  }
+
+  // Name-based Shopify verification for farmer_market / event merchants
+  await Promise.all(
+    merchantDrafts
+      .filter((d) => d.needsNameFallback)
+      .slice(0, 5)
+      .map(async (d) => {
+        try {
+          const results = await searchCatalog(d.place.name, { limit: 1 });
+          if (results.length > 0) {
+            d.shopifyStatus = "verified";
+            d.checkoutUrl = results[0].checkoutUrl ?? null;
+          }
+        } catch { /* ignore */ }
+      })
+  );
+
+  const merchants = merchantDrafts.map((d) => {
+    const p = d.place;
+    const operatingSeason = d.type === "farmer_market" ? "Saturdays, May–October · 8am–1pm" : null;
+    const upcomingDates = p.isEvent ? nextSaturdays(2) : null;
+    return {
+      placeId: p.place_id,
+      name: p.name,
+      type: d.type,
+      lat: p.geometry.location.lat,
+      lng: p.geometry.location.lng,
+      vicinity: p.vicinity ?? "",
+      rating: p.rating ?? null,
+      userRatingsTotal: p.user_ratings_total ?? 0,
+      distanceFromStartKm: Math.round(d.distFromStart / 100) / 10,
+      shopifyStatus: d.shopifyStatus,
+      isEvent: p.isEvent,
+      chainTier: d.chainTier,
+      openNow: p.opening_hours?.open_now ?? null,
+      photoUrl: null as string | null,
+      checkoutUrl: d.checkoutUrl,
+      ...(operatingSeason ? { operatingSeason } : {}),
+      ...(upcomingDates ? { upcomingDates } : {}),
+    };
+  });
+
+  const totalKm = Math.round(totalM / 100) / 10;
+
+  logger.info({
+    intent, centre,
+    merchants: merchants.length,
+    verified: merchants.filter((m) => m.shopifyStatus === "verified").length,
+    events: merchants.filter((m) => m.isEvent).length,
+    totalKm,
+  }, "plan-discovery-route computed");
+
+  return {
+    intent,
+    resolvedLocation: centre,
+    merchants,
+    totalDistanceKm: totalKm,
+    estimatedWalkMinutes: Math.round(totalKm * 12),
+    source: "google",
+  };
+}
+
 // GET /api/plan-discovery-route
 router.get("/plan-discovery-route", async (req, res) => {
   const { intent, city, lat, lng, radius } = req.query as Record<string, string | undefined>;
@@ -1569,256 +1819,18 @@ router.get("/plan-discovery-route", async (req, res) => {
     return;
   }
 
-  const radiusM = parseInt(radius ?? "2000", 10);
-  const clampedRadius = Number.isFinite(radiusM) ? Math.min(Math.max(radiusM, 500), 10_000) : 2000;
-
-  // Resolve centre: explicit lat/lng > geocode city > default to NOTL
-  let centre: { lat: number; lng: number; name: string };
-
-  const latN = lat ? parseFloat(lat) : NaN;
-  const lngN = lng ? parseFloat(lng) : NaN;
-  if (Number.isFinite(latN) && Number.isFinite(lngN) && latN >= 41 && latN <= 57) {
-    centre = { lat: latN, lng: lngN, name: city ?? "Custom location" };
-  } else if (city?.trim()) {
-    const geocoded = await geocodeLocation(city.trim());
-    if (!geocoded) {
-      res.status(400).json({ error: `Could not geocode city: "${city}"` });
-      return;
-    }
-    centre = geocoded;
-  } else {
-    // Default: NOTL Old Town
-    centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
-  }
-
-  if (!GOOGLE_MAPS_API_KEY) {
-    req.log.info({ intent, centre }, "plan-discovery-route: no API key, using mock");
-    res.json(buildMockDiscoveryRoute(intent.trim(), centre));
-    return;
-  }
-
   try {
-    const { query, types } = intentToSearchTerms(intent.trim());
-
-    // 1. Text search for the intent in the area
-    const textUrl =
-      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
-      `?query=${encodeURIComponent(query + " " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius}&key=${GOOGLE_MAPS_API_KEY}`;
-    const textR = await fetch(textUrl);
-    const textD = (await textR.json()) as { status: string; results?: PlacesResult[] };
-
-    // 2. Nearby search for the primary type
-    const nearbySearches = types.map((t) => {
-      const nearbyUrl =
-        `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
-        `?location=${centre.lat},${centre.lng}&radius=${clampedRadius}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`;
-      return fetch(nearbyUrl)
-        .then((r) => r.json() as Promise<{ status: string; results?: PlacesResult[] }>)
-        .then((d) => d.results ?? [])
-        .catch(() => [] as PlacesResult[]);
-    });
-    const nearbyBatches = await Promise.all(nearbySearches);
-
-    // 3. Farmers-market / event text search (always run as supplemental)
-    const eventUrl =
-      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
-      `?query=${encodeURIComponent("farmers market event pop-up " + (city ?? "Ontario"))}&location=${centre.lat},${centre.lng}&radius=${clampedRadius * 1.5}&key=${GOOGLE_MAPS_API_KEY}`;
-    const eventR = await fetch(eventUrl);
-    const eventD = (await eventR.json()) as { status: string; results?: PlacesResult[] };
-
-    // Merge + deduplicate
-    const seen = new Set<string>();
-    const SKIP_TYPES = new Set([
-      "lodging", "pharmacy", "drugstore", "gas_station", "hospital",
-      "bank", "atm", "political", "locality", "transit_station",
-    ]);
-    const allPlaces: (PlacesResult & { isEvent: boolean })[] = [];
-
-    const addPlaces = (results: PlacesResult[], isEvent: boolean) => {
-      for (const p of results) {
-        if (seen.has(p.place_id)) continue;
-        if (p.types.some((t) => SKIP_TYPES.has(t))) continue;
-        if (isEnterpriseChain(p.name)) continue;
-        // Must be within 1.5× the radius of the centre
-        const distM = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
-        if (distM > clampedRadius * 1.5) continue;
-        seen.add(p.place_id);
-        allPlaces.push({ ...p, isEvent });
-      }
-    };
-
-    addPlaces(textD.results ?? [], false);
-    for (const batch of nearbyBatches) addPlaces(batch, false);
-    // Event layer — mark as isEvent
-    addPlaces(
-      (eventD.results ?? []).filter((p) =>
-        /market|event|pop.up|festival|fair/i.test(p.name)
-      ),
-      true
-    );
-
-    if (allPlaces.length === 0) {
-      req.log.info({ intent, centre }, "plan-discovery-route: no Places results, using mock");
-      res.json(buildMockDiscoveryRoute(intent.trim(), centre));
-      return;
-    }
-
-    // Quality-sort then cap at 20 candidates
-    allPlaces.sort((a, b) => {
-      const qa = (a.rating ?? 3.5) * Math.log((a.user_ratings_total ?? 0) + 1);
-      const qb = (b.rating ?? 3.5) * Math.log((b.user_ratings_total ?? 0) + 1);
-      return qb - qa;
-    });
-    const topPlaces = allPlaces.slice(0, 20);
-
-    // NN-order from centre
-    const ordered = nearestNeighborOrder(centre, topPlaces);
-
-    // Shopify verification: fetch catalog + domain-match
-    const { byDomain } = await fetchOntarioCatalog().catch(() => ({
-      byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
-    }));
-
-    // Place Details (website) in parallel for top 20
-    const detailsMap = new Map<string, { website?: string }>();
-    await Promise.all(
-      ordered.map(async (p) => {
-        try {
-          const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website&key=${GOOGLE_MAPS_API_KEY}`;
-          const r = await fetch(url);
-          const d = (await r.json()) as { result?: { website?: string } };
-          if (d.result) detailsMap.set(p.place_id, d.result);
-        } catch { /* skip */ }
-      })
-    );
-
-    // Build result merchant drafts (sequential to preserve NN-path distance calc)
-    let totalM = 0;
-    let prev = centre;
-    type MerchantDraft = {
-      place: PlacesResult & { isEvent: boolean };
-      distFromStart: number;
-      shopifyStatus: "verified" | "ghost";
-      checkoutUrl: string | null;
-      chainTier: string;
-      type: string;
-      needsNameFallback: boolean;
-    };
-    const merchantDrafts: MerchantDraft[] = [];
-
-    for (const p of ordered) {
-      const distFromStart = haversineMetre(centre.lat, centre.lng, p.geometry.location.lat, p.geometry.location.lng);
-      const stepM = haversineMetre(prev.lat, prev.lng, p.geometry.location.lat, p.geometry.location.lng);
-      totalM += stepM;
-      prev = p.geometry.location;
-
-      const website = detailsMap.get(p.place_id)?.website ?? null;
-      let shopifyStatus: "verified" | "ghost" = "ghost";
-      let checkoutUrl: string | null = null;
-
-      if (website) {
-        const domain = normalizeDomain(website);
-        const catalogEntry = byDomain.get(domain)
-          ?? byDomain.get(domain.replace(/^shop\./, ""))
-          ?? byDomain.get(domain.replace(/^store\./, ""));
-        if (catalogEntry) {
-          shopifyStatus = "verified";
-          checkoutUrl = catalogEntry.products[0]?.checkoutUrl ?? null;
-        }
-      }
-
-      const type = googleTypesToMerchantType(p.types);
-      const isMarketOrEvent = type === "farmer_market" || type === "market" || (p as PlacesResult & { isEvent: boolean }).isEvent;
-      const needsNameFallback = shopifyStatus === "ghost" && isMarketOrEvent;
-
-      merchantDrafts.push({
-        place: p as PlacesResult & { isEvent: boolean },
-        distFromStart,
-        shopifyStatus,
-        checkoutUrl,
-        chainTier: classifyChainTier(p.name, p.types),
-        type,
-        needsNameFallback,
-      });
-    }
-
-    // Name-based Shopify verification for market/event merchants that lack a matching website
-    await Promise.all(
-      merchantDrafts
-        .filter((d) => d.needsNameFallback)
-        .slice(0, 5) // cap to avoid rate-limiting
-        .map(async (d) => {
-          try {
-            const results = await searchCatalog(d.place.name, { limit: 1 });
-            if (results.length > 0) {
-              d.shopifyStatus = "verified";
-              d.checkoutUrl = results[0].checkoutUrl ?? null;
-            }
-          } catch { /* ignore */ }
-        })
-    );
-
-    // ISO date strings for the next N Saturdays from today (server-side)
-    function nextSaturdays(n: number): string[] {
-      const dates: string[] = [];
-      const now = new Date();
-      const daysUntilSat = ((6 - now.getDay()) + 7) % 7 || 7;
-      for (let i = 0; i < n; i++) {
-        const d = new Date(now);
-        d.setDate(now.getDate() + daysUntilSat + i * 7);
-        dates.push(d.toISOString().slice(0, 10));
-      }
-      return dates;
-    }
-
-    const merchants = merchantDrafts.map((d) => {
-      const p = d.place;
-      const operatingSeason = d.type === "farmer_market" || d.type === "market"
-        ? "Saturdays, May–October · 8am–1pm"
-        : null;
-      const upcomingDates = p.isEvent ? nextSaturdays(2) : null;
-
-      return {
-        placeId: p.place_id,
-        name: p.name,
-        type: d.type,
-        lat: p.geometry.location.lat,
-        lng: p.geometry.location.lng,
-        vicinity: p.vicinity ?? "",
-        rating: p.rating ?? null,
-        userRatingsTotal: p.user_ratings_total ?? 0,
-        distanceFromStartKm: Math.round(d.distFromStart / 100) / 10,
-        shopifyStatus: d.shopifyStatus,
-        isEvent: p.isEvent,
-        chainTier: d.chainTier,
-        openNow: p.opening_hours?.open_now ?? null,
-        photoUrl: null as string | null,
-        checkoutUrl: d.checkoutUrl,
-        ...(operatingSeason ? { operatingSeason } : {}),
-        ...(upcomingDates ? { upcomingDates } : {}),
-      };
-    });
-
-    const totalKm = Math.round(totalM / 100) / 10;
-
-    req.log.info({
-      intent, centre,
-      merchants: merchants.length,
-      verified: merchants.filter((m) => m.shopifyStatus === "verified").length,
-      events: merchants.filter((m) => m.isEvent).length,
-      totalKm,
-    }, "plan-discovery-route computed");
-
-    res.json({
+    const result = await computePlanDiscovery({
       intent: intent.trim(),
-      resolvedLocation: centre,
-      merchants,
-      totalDistanceKm: totalKm,
-      estimatedWalkMinutes: Math.round(totalKm * 12),
-      source: "google",
+      city: city?.trim(),
+      lat: lat ? parseFloat(lat) : undefined,
+      lng: lng ? parseFloat(lng) : undefined,
+      radius: radius ? parseInt(radius, 10) : undefined,
     });
+    res.json(result);
   } catch (err) {
     req.log.warn({ err }, "plan-discovery-route: error, falling back to mock");
+    const centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
     res.json(buildMockDiscoveryRoute(intent.trim(), centre));
   }
 });
