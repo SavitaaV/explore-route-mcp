@@ -49,6 +49,7 @@ interface PlacesEdge {
   targetId: string;
   score: number;
   proximityM: number;
+  distanceKm?: number;
   affinityReason: string;
   sharedCategories?: string[];
   catalogOverlap?: number;
@@ -101,11 +102,15 @@ const GHOST_AMBER = "#f59e0b";
 const TYPE_EMOJI: Record<string, string> = {
   winery: "🍷", bakery: "🥐", cafe: "☕",
   restaurant: "🍽️", artisan: "🫙", boutique: "🛍️",
+  farmer_market: "🥬", market: "🧺", event: "🎪",
 };
 const TYPE_LABEL: Record<string, string> = {
   winery: "Winery", bakery: "Bakery", cafe: "Café",
   restaurant: "Restaurant", artisan: "Artisan", boutique: "Boutique",
+  farmer_market: "Farmers Market", market: "Market", event: "Event",
 };
+
+const MARKET_TYPES = new Set(["farmer_market", "market", "event"]);
 const CITY_COLOR: Record<string, string> = {
   Toronto: "#60a5fa",
   Ottawa: "#a78bfa",
@@ -182,6 +187,7 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [settled, setSettled] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
+  const [showMarketsOnly, setShowMarketsOnly] = useState(false);
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
   const [globalQuery, setGlobalQuery] = useState("");
   const [globalResults, setGlobalResults] = useState<GlobalCatalogProduct[] | null>(null);
@@ -300,9 +306,13 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const ghosts = graphData.nodes.filter((n) => n.shopifyStatus !== "verified");
   const cities = [...new Set(graphData.nodes.map((n) => n.city).filter(Boolean))] as string[];
 
-  const displayedNodes = activeCity
-    ? graphData.nodes.filter((n) => !n.city || n.city === activeCity)
-    : graphData.nodes;
+  const displayedNodes = graphData.nodes.filter((n) => {
+    if (activeCity && n.city && n.city !== activeCity) return false;
+    if (showMarketsOnly && !MARKET_TYPES.has(n.type)) return false;
+    return true;
+  });
+
+  const hasMarketNodes = graphData.nodes.some((n) => MARKET_TYPES.has(n.type));
 
   const handleNodeEnter = (node: PlacesNode, pos: NodePos) => {
     const shadow = shadowMap.get(node.placeId);
@@ -363,26 +373,45 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
               )}
             </div>
           )}
-          {/* City filter */}
-          {cities.length > 0 && (
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
-              <button
-                onClick={() => setActiveCity(null)}
-                style={{ fontSize: 7.5, padding: "1px 7px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: !activeCity ? "rgba(255,255,255,0.12)" : "transparent", color: !activeCity ? "#fff" : "rgba(255,255,255,0.35)", cursor: "pointer", fontWeight: 600 }}
-              >
-                All
-              </button>
-              {cities.map((city) => (
+          {/* City filter + markets toggle */}
+          <div style={{ marginTop: 8 }}>
+            {hasMarketNodes && (
+              <div style={{ marginBottom: 6 }}>
                 <button
-                  key={city}
-                  onClick={() => setActiveCity(activeCity === city ? null : city)}
-                  style={{ fontSize: 7.5, padding: "1px 7px", borderRadius: 8, border: `1px solid ${CITY_COLOR[city] ?? "#888"}44`, background: activeCity === city ? `${CITY_COLOR[city] ?? "#888"}22` : "transparent", color: CITY_COLOR[city] ?? "rgba(255,255,255,0.4)", cursor: "pointer", fontWeight: 600 }}
+                  onClick={() => setShowMarketsOnly((v) => !v)}
+                  style={{
+                    fontSize: 7.5, padding: "2px 9px", borderRadius: 8, cursor: "pointer", fontWeight: 700,
+                    border: showMarketsOnly ? "1px solid rgba(52,211,153,0.5)" : "1px solid rgba(134,239,172,0.2)",
+                    background: showMarketsOnly ? "rgba(5,150,105,0.2)" : "rgba(255,255,255,0.04)",
+                    color: showMarketsOnly ? "#34d399" : "rgba(255,255,255,0.35)",
+                    display: "flex", alignItems: "center", gap: 4,
+                  }}
                 >
-                  {city}
+                  <span>🥬</span>
+                  <span>{showMarketsOnly ? "Markets · ON" : "Farmers Markets & Events"}</span>
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
+            )}
+            {cities.length > 0 && (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setActiveCity(null)}
+                  style={{ fontSize: 7.5, padding: "1px 7px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: !activeCity ? "rgba(255,255,255,0.12)" : "transparent", color: !activeCity ? "#fff" : "rgba(255,255,255,0.35)", cursor: "pointer", fontWeight: 600 }}
+                >
+                  All
+                </button>
+                {cities.map((city) => (
+                  <button
+                    key={city}
+                    onClick={() => setActiveCity(activeCity === city ? null : city)}
+                    style={{ fontSize: 7.5, padding: "1px 7px", borderRadius: 8, border: `1px solid ${CITY_COLOR[city] ?? "#888"}44`, background: activeCity === city ? `${CITY_COLOR[city] ?? "#888"}22` : "transparent", color: CITY_COLOR[city] ?? "rgba(255,255,255,0.4)", cursor: "pointer", fontWeight: 600 }}
+                  >
+                    {city}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Merchant list */}
@@ -605,21 +634,38 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
             {graphData.edges
               .filter((e) => {
                 const s = nodeMap.get(e.sourceId), t = nodeMap.get(e.targetId);
-                return s?.shopifyStatus === "verified" && t?.shopifyStatus === "verified";
+                if (s?.shopifyStatus !== "verified" || t?.shopifyStatus !== "verified") return false;
+                if (showMarketsOnly && !MARKET_TYPES.has(s.type) && !MARKET_TYPES.has(t.type)) return false;
+                return true;
               })
               .map((edge) => {
                 const src = positions.get(edge.sourceId), tgt = positions.get(edge.targetId);
                 if (!src || !tgt) return null;
                 const dim = activeCity && nodeMap.get(edge.sourceId)?.city !== activeCity && nodeMap.get(edge.targetId)?.city !== activeCity;
                 const hl = tooltip?.node.placeId === edge.sourceId || tooltip?.node.placeId === edge.targetId;
+                const distLabel = edge.distanceKm != null
+                  ? `${edge.distanceKm}km`
+                  : `${(edge.proximityM / 1000).toFixed(1)}km`;
+                const midX = (src.x + tgt.x) / 2;
+                const midY = (src.y + tgt.y) / 2;
                 return (
-                  <line key={`${edge.sourceId}-${edge.targetId}`}
-                    x1={src.x} y1={src.y} x2={tgt.x} y2={tgt.y}
-                    stroke={SHOPIFY_GREEN}
-                    strokeWidth={hl ? edge.score * 4 + 1.5 : edge.score * 2.5 + 0.8}
-                    strokeOpacity={dim ? 0.05 : hl ? 0.9 : 0.4}
-                    style={{ transition: "stroke-opacity 0.2s" }}
-                  />
+                  <g key={`${edge.sourceId}-${edge.targetId}`}>
+                    <line
+                      x1={src.x} y1={src.y} x2={tgt.x} y2={tgt.y}
+                      stroke={SHOPIFY_GREEN}
+                      strokeWidth={hl ? edge.score * 4 + 1.5 : edge.score * 2.5 + 0.8}
+                      strokeOpacity={dim ? 0.05 : hl ? 0.9 : 0.4}
+                      style={{ transition: "stroke-opacity 0.2s" }}
+                    />
+                    {hl && (
+                      <text x={midX} y={midY - 5}
+                        textAnchor="middle" fontSize={6.5} fill={SHOPIFY_GREEN} fillOpacity={0.85}
+                        fontWeight="700" letterSpacing={0.3}
+                        style={{ pointerEvents: "none", userSelect: "none" }}>
+                        {distLabel}
+                      </text>
+                    )}
+                  </g>
                 );
               })}
 

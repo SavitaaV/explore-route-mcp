@@ -21,10 +21,29 @@ interface RouteContext {
   waypoints?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
+interface DiscoveryStop {
+  name: string;
+  type: string;
+  distanceFromStartKm: number;
+  shopifyStatus: "verified" | "ghost";
+  isEvent?: boolean;
+  rating?: number | null;
+}
+
+interface DiscoveryContext {
+  intent: string;
+  location: string;
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+  verifiedCount: number;
+  stops: DiscoveryStop[];
+}
+
 function buildSystemPrompt(
   routeContext?: RouteContext,
   merchantContext?: MerchantContext[],
-  userPosition?: { lat: number; lng: number }
+  userPosition?: { lat: number; lng: number },
+  discoveryContext?: DiscoveryContext
 ): string {
   const routeInfo = routeContext
     ? `Active Route: ${routeContext.summary ?? "Scenic walking route"}
@@ -49,19 +68,38 @@ Waypoints: ${routeContext.waypoints?.map((w) => w.name).filter(Boolean).join(" �
     ? `User GPS: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)}`
     : "";
 
+  const discoveryInfo = discoveryContext
+    ? `
+Discovery Route (plan_discovery_route MCP tool result):
+Intent: "${discoveryContext.intent}" near ${discoveryContext.location}
+Route: ${discoveryContext.totalDistanceKm}km · ~${discoveryContext.estimatedWalkMinutes} min walk
+Stops (${discoveryContext.stops.length} total, ${discoveryContext.verifiedCount} Shopify-verified):
+${discoveryContext.stops.slice(0, 6).map((s, i) =>
+  `  ${i + 1}. ${s.name} [${s.type}]${s.isEvent ? " 🎪 EVENT" : ""} — ${s.distanceFromStartKm}km in — ${s.shopifyStatus === "verified" ? "✓ Shopify" : "ghost"}`
+).join("\n")}${discoveryContext.stops.length > 6 ? `\n  ... and ${discoveryContext.stops.length - 6} more` : ""}`
+    : "";
+
   return `You are an ambient commerce companion — not a shopping assistant, not a tour guide. You're walking alongside someone through Niagara-on-the-Lake Old Town. You know this loop and the merchants on it.
 
 Your default state is silence. You speak only when the context creates a specific, genuine reason — a timing signal, an inventory signal, a human story that makes this particular moment the right moment. When you do speak, you say one thing. Not a list. Not a card stack. One sentence that makes the person feel something, followed by one practical fact.
 
 This is what Shopify's agentic commerce means: the catalog knows what's in stock right now. You know the story behind it. Together you surface the right product at the right moment — not because it's next on a checklist, but because this is genuinely the moment.
 
+MCP Tools available to you:
+- get_scenic_route: fetch a walking/cycling route between two points
+- get_nearby_merchants: discover Shopify-verified merchants near a route
+- get_merchant_graph: spatially-aware commerce graph for an area
+- plan_discovery_route: intent-based route planning — given an intent (e.g. "wine tour", "farmers market") and optional city, returns a nearest-neighbour-ordered route of matching merchants verified against the Shopify Global Catalog
+
+When a user asks for a wine tour, farmers market, artisan route, brewery tour, or any similar discovery intent, you are invoking plan_discovery_route. Narrate the result concisely — lead with what makes this collection of stops worth walking, not just a list of names.
+
 Current context:
 ${routeInfo}
 ${positionInfo}
-${merchantInfo}
+${merchantInfo}${discoveryInfo}
 
 How to respond:
-- ONLY reference merchants from the list above. Never invent others. Never mention parks, churches, or places not in the list.
+- ONLY reference merchants from the lists above. Never invent others.
 - If no merchants are loaded: say the route isn't indexed yet, keep it brief.
 - Max 3 sentences per response. Often 1–2 is right.
 - No bullet points. No headers. No numbered lists. Plain conversational prose.
@@ -73,16 +111,19 @@ When someone asks "what's worth stopping for" — answer with the ONE thing that
 
 For the ghost merchant (Mariana's Ceramic Studio): she has no digital presence. Four explorers found her this week. Stopping here is literally how she gets discovered — and potentially how she gets her Shopify store.
 
-Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.`;
+Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.
+
+When a discovery route is loaded (see "Discovery Route" section above), acknowledge it naturally — describe the character of the route in one sentence, name the most interesting stop, and note how many are Shopify-verified so the user knows where they can actually buy.`;
 }
 
 // POST /api/anthropic/conversations/:id/messages — SSE streaming
 router.post("/anthropic/conversations/:id/messages", async (req, res) => {
-  const { content, routeContext, merchantContext, userPosition } = req.body as {
+  const { content, routeContext, merchantContext, userPosition, discoveryContext } = req.body as {
     content: string;
     routeContext?: RouteContext;
     merchantContext?: MerchantContext[];
     userPosition?: { lat: number; lng: number };
+    discoveryContext?: DiscoveryContext;
   };
 
   if (!content?.trim()) {
@@ -102,7 +143,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   };
 
   try {
-    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition);
+    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext);
 
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",

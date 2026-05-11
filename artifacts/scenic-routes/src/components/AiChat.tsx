@@ -772,6 +772,24 @@ export function AiChat({
     abortRef.current = new AbortController();
 
     try {
+      const discoveryCtx = discoveryRoute
+        ? {
+            intent: discoveryRoute.intent,
+            location: discoveryRoute.resolvedLocation.name,
+            totalDistanceKm: discoveryRoute.totalDistanceKm,
+            estimatedWalkMinutes: discoveryRoute.estimatedWalkMinutes,
+            verifiedCount: discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length,
+            stops: discoveryRoute.merchants.map((m) => ({
+              name: m.name,
+              type: m.type,
+              distanceFromStartKm: m.distanceFromStartKm,
+              shopifyStatus: m.shopifyStatus,
+              isEvent: m.isEvent,
+              rating: m.rating,
+            })),
+          }
+        : undefined;
+
       const res = await fetch(`${BASE_URL}/api/anthropic/conversations/1/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -781,6 +799,7 @@ export function AiChat({
           routeContext,
           merchantContext: merchants.map((m) => ({ id: m.id, name: m.name, type: m.type, address: m.address, description: m.description, rating: m.rating, walkMinutes: m.walkMinutes })),
           userPosition,
+          discoveryContext: discoveryCtx,
         }),
       });
 
