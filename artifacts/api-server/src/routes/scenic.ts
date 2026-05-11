@@ -827,19 +827,59 @@ const ENTERPRISE_CHAIN_BLOCKLIST: string[] = [
 // Shopify-verified and should remain visible.
 const ENTERPRISE_CHAIN_ALLOWLIST: string[] = ["ikea"];
 
+// Large Canadian multi-province brands that are filtered unless Shopify-verified.
+// These are too widespread to be "regional" but not as globally ubiquitous as enterprise chains.
+const NATIONAL_CHAIN_LIST: string[] = [
+  "holt renfrew", "roots canada", "roots clothing", "lush cosmetics",
+  "lush fresh", "arc'teryx", "sport chek", "marks work", "reitmans",
+  "l'occitane", "anthropologie", "williams-sonoma", "pottery barn",
+  "restoration hardware", "rh ", "crate and barrel", "west elm",
+  "indochino", "frank and oak", "aritzia",
+];
+
+// isEnterpriseChain: used for the initial Places dedup pre-filter.
+// Allowlisted brands pass through (they may be verified later).
 function isEnterpriseChain(name: string): boolean {
   const lower = name.toLowerCase();
   if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return false;
   return ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b));
 }
 
-// Classify a merchant as local / regional / enterprise based on name only.
-// Deliberately avoids type-based heuristics to prevent false positives on local markets.
-function classifyChainTier(name: string, _types: string[]): "local" | "regional" | "enterprise" {
+// classifyChainTier: assigns an initial tier based solely on name.
+// "local"    — single-location independent business
+// "regional" — Ontario/multi-city brand (5–50 locations)
+// "national" — large Canadian multi-province brand, needs verification to appear
+// "enterprise" — blocked global/national chain; removed from graph unless allowlisted+verified
+function classifyChainTier(name: string, _types: string[]): "local" | "regional" | "national" | "enterprise" {
   const lower = name.toLowerCase();
-  if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) return "regional";
+  // Allowlisted brands start as "enterprise" — verifyAndPromote() upgrades them if verified
   if (ENTERPRISE_CHAIN_BLOCKLIST.some((b) => lower.includes(b))) return "enterprise";
+  if (NATIONAL_CHAIN_LIST.some((b) => lower.includes(b))) return "national";
   return "local";
+}
+
+// verifyAndPromote: after shopifyStatus is known, promote allowlisted brands that
+// are Shopify-verified from "enterprise" → "regional" so they survive the filter.
+function verifyAndPromote(
+  node: { name: string; chainTier: string; shopifyStatus: string }
+): void {
+  if (node.chainTier === "enterprise" && node.shopifyStatus === "verified") {
+    const lower = node.name.toLowerCase();
+    if (ENTERPRISE_CHAIN_ALLOWLIST.some((a) => lower.includes(a))) {
+      node.chainTier = "regional";
+    }
+  }
+}
+
+// nameSimilarity: normalized Jaccard token overlap between two strings.
+// Returns 0–1. Used to gate reverse text-search matches.
+function nameSimilarity(a: string, b: string): number {
+  const tokens = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9 ]/g, "").split(/\s+/).filter(Boolean));
+  const ta = tokens(a);
+  const tb = tokens(b);
+  const shared = [...tb].filter((t) => ta.has(t));
+  const union = new Set([...ta, ...tb]);
+  return union.size === 0 ? 0 : shared.length / union.size;
 }
 
 // Shopify Global Catalog queries scoped to Ontario product categories
@@ -975,7 +1015,7 @@ router.get("/places-graph", async (req, res) => {
         placeId: m.id,
         name: m.name,
         type: m.type,
-        chainTier: "local" as const,
+        chainTier: classifyChainTier(m.name, []) as "local" | "regional" | "national" | "enterprise",
         city: ("city" in m ? (m as { city: string }).city : "Niagara") as string | undefined,
         lat: m.lat,
         lng: m.lng,
@@ -1018,8 +1058,12 @@ router.get("/places-graph", async (req, res) => {
         }
       }
     }
-    const commerceRoute = [...nodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
-    return { nodes, edges, commerceRoute, source: "mock" };
+    // Apply the same verify-and-promote + filter as the live path
+    for (const n of nodes) verifyAndPromote(n);
+    const filteredNodes = nodes.filter((n) => n.chainTier === "local" || n.chainTier === "regional");
+    const filteredEdges = edges.filter((e) => filteredNodes.some((n) => n.placeId === e.sourceId) && filteredNodes.some((n) => n.placeId === e.targetId));
+    const commerceRoute = [...filteredNodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
+    return { nodes: filteredNodes, edges: filteredEdges, commerceRoute, source: "mock" };
   };
 
   if (!GOOGLE_MAPS_API_KEY) {
@@ -1164,6 +1208,9 @@ router.get("/places-graph", async (req, res) => {
             // Ontario bounding box: roughly 41–57°N, 74–96°W
             if (lat < 41 || lat > 57 || lng < -96 || lng > -73) return null;
             if (seenPlaceIds.has(p.place_id)) return null;
+            // Name similarity gate: the Place name must meaningfully match the brand hint
+            // to avoid false-positive Shopify verification on unrelated businesses.
+            if (nameSimilarity(p.name, brandHint) < 0.25) return null;
             const closest = ONTARIO_CITIES.reduce((best, city) =>
               Math.hypot(lat - city.lat, lng - city.lng) < Math.hypot(lat - best.lat, lng - best.lng)
                 ? city : best
@@ -1199,11 +1246,14 @@ router.get("/places-graph", async (req, res) => {
       }
     }
 
-    // ── Filter enterprise-tier nodes ──────────────────────────────────────────
-    // Remove any nodes still classified as enterprise (blocklist hits that
-    // slipped past the isEnterpriseChain pre-filter due to name variants).
-    // IKEA (allowlisted, chainTier="regional") is retained.
-    const nonEnterprise = nodes.filter((n) => n.chainTier !== "enterprise");
+    // ── Verify-and-promote + filter ───────────────────────────────────────────
+    // 1. Promote allowlisted brands that are Shopify-verified (enterprise→regional)
+    // 2. Remove enterprise and national nodes (only local + regional survive)
+    //    Exception: allowlisted brands already promoted to "regional" are kept.
+    for (const n of nodes) verifyAndPromote(n);
+    const nonEnterprise = nodes.filter(
+      (n) => n.chainTier === "local" || n.chainTier === "regional"
+    );
     nodes.length = 0;
     nodes.push(...nonEnterprise);
 
