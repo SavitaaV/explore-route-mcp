@@ -5,7 +5,14 @@ const router = Router();
 
 const CATALOG_CLIENT_ID = process.env.SHOPIFY_CATALOG_CLIENT_ID;
 const CATALOG_CLIENT_SECRET = process.env.SHOPIFY_CATALOG_CLIENT_SECRET;
-const CATALOG_RECORD_ID = "54c0b945864dc88b5bfd3fe5c20fe444"; // dashboard record ID (not auth credential)
+const CATALOG_RECORD_ID = "54c0b945864dc88b5bfd3fe5c20fe444";
+
+// Shopify's validated example profile — used as fallback / for testing.
+// Swap for your own hosted profile once it advertises the right capabilities.
+const SHOPIFY_EXAMPLE_PROFILE =
+  "https://shopify.dev/ucp/agent-profiles/examples/2026-04-08/valid-with-capabilities.json";
+
+const MCP_ENDPOINT = "https://catalog.shopify.com/api/ucp/mcp";
 
 // ─── JWT token cache (60-min TTL) ────────────────────────────────────────────
 let _cachedToken: string | null = null;
@@ -13,7 +20,6 @@ let _tokenExpiresAt = 0;
 
 async function getAccessToken(): Promise<string | null> {
   if (!CATALOG_CLIENT_ID || !CATALOG_CLIENT_SECRET) return null;
-  // Both secrets equal the record ID → credentials not yet updated
   if (CATALOG_CLIENT_ID === CATALOG_RECORD_ID && CATALOG_CLIENT_SECRET === CATALOG_RECORD_ID) return null;
 
   if (_cachedToken && Date.now() < _tokenExpiresAt - 30_000) return _cachedToken;
@@ -52,13 +58,114 @@ async function getAccessToken(): Promise<string | null> {
   return _cachedToken;
 }
 
-// ─── UCP Agent Profile (required for MCP endpoint) ───────────────────────────
-// Served at /api/ucp-agent-profile so it has a stable public URL.
+// ─── Core MCP caller ─────────────────────────────────────────────────────────
+// The UCP profile URL MUST live inside params.arguments.meta (not top-level meta).
+async function callMcp(
+  token: string,
+  toolName: string,
+  catalogArgs: Record<string, unknown>,
+  profileUrl: string = SHOPIFY_EXAMPLE_PROFILE,
+): Promise<unknown> {
+  const body = {
+    jsonrpc: "2.0",
+    method: "tools/call",
+    id: Date.now(),
+    params: {
+      name: toolName,
+      arguments: {
+        meta: { "ucp-agent": { profile: profileUrl } },
+        catalog: catalogArgs,
+      },
+    },
+  };
+
+  const r = await fetch(MCP_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  return r.json();
+}
+
+// ─── UCP product shape ────────────────────────────────────────────────────────
+interface UcpVariant {
+  id?: string;
+  title?: string;
+  url?: string;
+  price?: { amount?: number; currency?: string };
+  availability?: { available?: boolean };
+  options?: { name?: string; label?: string }[];
+  media?: { type?: string; url?: string; alt_text?: string }[];
+}
+
+interface UcpProduct {
+  id?: string;
+  title?: string;
+  description?: { plain?: string };
+  variants?: UcpVariant[];
+  price_range?: {
+    min?: { amount?: number; currency?: string };
+    max?: { amount?: number; currency?: string };
+  };
+  media?: { type?: string; url?: string; alt_text?: string }[];
+  options?: { name?: string; values?: { label?: string }[] }[];
+}
+
+interface McpSearchResult {
+  result?: {
+    structuredContent?: {
+      products?: UcpProduct[];
+      ucp?: unknown;
+      messages?: unknown[];
+    };
+  };
+  error?: { code?: number; message?: string; data?: unknown };
+}
+
+function normalizeProducts(raw: UcpProduct[]) {
+  return raw.map((p) => {
+    const firstVariant = p.variants?.[0];
+    const checkoutUrl = firstVariant?.url ?? null;
+    return {
+      id: p.id,
+      title: p.title ?? "Unknown product",
+      description: p.description?.plain,
+      imageUrl: p.media?.[0]?.url ?? firstVariant?.media?.[0]?.url,
+      minPrice: p.price_range?.min?.amount,
+      maxPrice: p.price_range?.max?.amount,
+      currency: p.price_range?.min?.currency ?? firstVariant?.price?.currency,
+      checkoutUrl,
+      variantId: firstVariant?.id,
+      available: firstVariant?.availability?.available ?? true,
+      options: p.options ?? [],
+      variants: (p.variants ?? []).map((v) => ({
+        id: v.id,
+        title: v.title,
+        price: v.price?.amount,
+        currency: v.price?.currency,
+        url: v.url,
+        available: v.availability?.available ?? true,
+        options: v.options ?? [],
+        imageUrl: v.media?.[0]?.url,
+      })),
+    };
+  });
+}
+
+// ─── UCP Agent Profile ────────────────────────────────────────────────────────
+// This profile is fetched by Shopify when the MCP request includes its URL.
+// Capabilities advertised here determine which tools Shopify returns.
 router.get("/ucp-agent-profile", (_req, res) => {
   res.json({
     ucp: {
       version: "2026-04-08",
       capabilities: {
+        "dev.ucp.shopping.catalog.search": [{ version: "2026-04-08" }],
+        "dev.ucp.shopping.catalog.lookup": [{ version: "2026-04-08" }],
         "dev.ucp.shopping.cart": [{ version: "2026-04-08" }],
         "dev.ucp.shopping.checkout": [{ version: "2026-04-08" }],
       },
@@ -66,195 +173,7 @@ router.get("/ucp-agent-profile", (_req, res) => {
   });
 });
 
-// ─── GET /api/catalog/health ──────────────────────────────────────────────────
-// Returns credential status and a live token test.
-router.get("/catalog/health", async (_req, res) => {
-  const hasCredentials = !!(CATALOG_CLIENT_ID && CATALOG_CLIENT_SECRET);
-  const credentialsArePlaceholder =
-    CATALOG_CLIENT_ID === CATALOG_RECORD_ID || CATALOG_CLIENT_SECRET === CATALOG_RECORD_ID;
-
-  if (!hasCredentials) {
-    res.json({ ok: false, reason: "Missing SHOPIFY_CATALOG_CLIENT_ID or SHOPIFY_CATALOG_CLIENT_SECRET" });
-    return;
-  }
-  if (credentialsArePlaceholder) {
-    res.json({
-      ok: false,
-      reason: "Credentials contain dashboard record ID instead of OAuth client credentials. Please update both secrets with the Client ID and Client secret from the key detail page on dev.shopify.com.",
-    });
-    return;
-  }
-
-  const token = await getAccessToken();
-  if (!token) {
-    res.json({ ok: false, reason: "Token exchange failed — check CLIENT_ID and CLIENT_SECRET" });
-    return;
-  }
-
-  // Quick search ping to verify token works
-  const ping = await fetch(
-    "https://catalog.shopify.com/global/v2/search?query=coffee&limit=1&ships_to=CA",
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const pingData = (await ping.json()) as { errors?: unknown };
-  const pingOk = ping.ok && !pingData.errors;
-
-  res.json({
-    ok: pingOk,
-    tokenObtained: true,
-    catalogPing: ping.status,
-    reason: pingOk ? "Shopify Global Catalog API is live" : `Catalog ping returned ${ping.status}`,
-  });
-});
-
-// ─── Type definitions for catalog responses ───────────────────────────────────
-interface CatalogOffer {
-  shop?: { name?: string; domain?: string };
-  price?: { amount?: number; currency_code?: string };
-  available_for_sale?: boolean;
-  checkout_url?: string;
-  variant_id?: string;
-}
-
-interface CatalogProduct {
-  upid?: string;
-  title?: string;
-  description?: string;
-  vendor?: string;
-  min_price?: number;
-  max_price?: number;
-  currency?: string;
-  image_url?: string;
-  offers?: CatalogOffer[];
-  tags?: string[];
-  product_type?: string;
-}
-
-interface CatalogSearchResponse {
-  universal_products?: CatalogProduct[];
-  products?: CatalogProduct[];
-  results?: CatalogProduct[];
-  errors?: unknown;
-  cursor?: string;
-}
-
-// ─── GET /api/catalog/search ──────────────────────────────────────────────────
-// Searches the Shopify Global Catalog.
-// Query params: q (required), limit (1-10), shipsTo (ISO country, default CA),
-//               shipsFrom, minPrice, maxPrice
-router.get("/catalog/search", async (req, res) => {
-  const { q, limit = "8", shipsTo = "CA", shipsFrom, minPrice, maxPrice } = req.query as Record<string, string>;
-
-  if (!q) {
-    res.status(400).json({ error: "q query param is required" });
-    return;
-  }
-
-  const token = await getAccessToken();
-  if (!token) {
-    res.json({
-      source: "unavailable",
-      products: [],
-      reason: "Shopify Catalog credentials not yet configured. Update SHOPIFY_CATALOG_CLIENT_ID and SHOPIFY_CATALOG_CLIENT_SECRET with real OAuth credentials from dev.shopify.com.",
-    });
-    return;
-  }
-
-  const limitNum = Math.min(10, Math.max(1, parseInt(limit, 10) || 8));
-  const params = new URLSearchParams({
-    query: q,
-    limit: String(limitNum),
-    ships_to: shipsTo,
-  });
-  if (shipsFrom) params.set("ships_from", shipsFrom);
-  if (minPrice) params.set("min_price", minPrice);
-  if (maxPrice) params.set("max_price", maxPrice);
-
-  try {
-    const r = await fetch(`https://catalog.shopify.com/global/v2/search?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const raw = (await r.json()) as CatalogSearchResponse;
-
-    if (!r.ok || raw.errors) {
-      logger.warn({ status: r.status, errors: raw.errors }, "shopify-catalog: search error");
-      res.status(r.ok ? 500 : r.status).json({ error: "Catalog search failed", detail: raw.errors });
-      return;
-    }
-
-    const items: CatalogProduct[] = raw.universal_products ?? raw.products ?? (raw.results as CatalogProduct[] | undefined) ?? [];
-
-    const products = items.map((p) => ({
-      upid: p.upid,
-      title: p.title ?? "Unknown product",
-      description: p.description,
-      vendor: p.vendor ?? p.offers?.[0]?.shop?.name,
-      shopDomain: p.offers?.[0]?.shop?.domain,
-      minPrice: p.min_price ?? p.offers?.[0]?.price?.amount,
-      maxPrice: p.max_price,
-      currency: p.currency ?? p.offers?.[0]?.price?.currency_code,
-      imageUrl: p.image_url,
-      checkoutUrl: p.offers?.[0]?.checkout_url,
-      variantId: p.offers?.[0]?.variant_id,
-      tags: p.tags ?? [],
-      productType: p.product_type,
-      offersCount: p.offers?.length ?? 0,
-    }));
-
-    res.json({ source: "shopify-global-catalog", query: q, shipsTo, count: products.length, products });
-  } catch (err) {
-    logger.error({ err }, "shopify-catalog: search fetch threw");
-    res.status(500).json({ error: "Failed to search Shopify Catalog", detail: String(err) });
-  }
-});
-
-// ─── POST /api/catalog/mcp ────────────────────────────────────────────────────
-// Proxies a raw JSON-RPC call to the Global Catalog MCP endpoint.
-// Body: { method, params } — we add jsonrpc/id/meta.ucp-agent.profile automatically.
-router.post("/catalog/mcp", async (req, res) => {
-  const { method = "tools/call", params = {} } = req.body as { method?: string; params?: unknown };
-
-  const token = await getAccessToken();
-  if (!token) {
-    res.json({
-      source: "unavailable",
-      reason: "Shopify Catalog credentials not yet configured",
-    });
-    return;
-  }
-
-  // Build profile URL from incoming request host
-  const proto = req.headers["x-forwarded-proto"] ?? "https";
-  const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
-  const profileUrl = `${proto}://${host}/api/ucp-agent-profile`;
-
-  const body = {
-    jsonrpc: "2.0",
-    method,
-    id: Date.now(),
-    params,
-    meta: { "ucp-agent": { profile: profileUrl } },
-  };
-
-  try {
-    const r = await fetch("https://catalog.shopify.com/api/ucp/mcp", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    const data = (await r.json()) as unknown;
-    res.status(r.status).json(data);
-  } catch (err) {
-    logger.error({ err }, "shopify-catalog: mcp proxy threw");
-    res.status(500).json({ error: "MCP proxy failed", detail: String(err) });
-  }
-});
-
 // ─── GET /api/catalog/status ──────────────────────────────────────────────────
-// Returns configuration status for the UI credential banner.
 router.get("/catalog/status", (_req, res) => {
   const hasId = !!CATALOG_CLIENT_ID;
   const hasSecret = !!CATALOG_CLIENT_SECRET;
@@ -267,11 +186,144 @@ router.get("/catalog/status", (_req, res) => {
     hasClientSecret: hasSecret,
     isPlaceholder,
     instructions: isPlaceholder
-      ? "Go to dev.shopify.com/dashboard → Catalogs → click your key → copy the Client ID and Client secret (not the record ID shown in the list)"
+      ? "Go to dev.shopify.com/dashboard → Catalogs → click your key → copy Client ID and Client secret (not the record ID in the list)"
       : !hasId || !hasSecret
-      ? "Set SHOPIFY_CATALOG_CLIENT_ID and SHOPIFY_CATALOG_CLIENT_SECRET in Replit Secrets"
-      : null,
+        ? "Set SHOPIFY_CATALOG_CLIENT_ID and SHOPIFY_CATALOG_CLIENT_SECRET in Replit Secrets"
+        : null,
   });
+});
+
+// ─── GET /api/catalog/health ──────────────────────────────────────────────────
+router.get("/catalog/health", async (_req, res) => {
+  const hasCredentials = !!(CATALOG_CLIENT_ID && CATALOG_CLIENT_SECRET);
+  const credentialsArePlaceholder =
+    CATALOG_CLIENT_ID === CATALOG_RECORD_ID || CATALOG_CLIENT_SECRET === CATALOG_RECORD_ID;
+
+  if (!hasCredentials) {
+    res.json({ ok: false, reason: "Missing SHOPIFY_CATALOG_CLIENT_ID or SHOPIFY_CATALOG_CLIENT_SECRET" });
+    return;
+  }
+  if (credentialsArePlaceholder) {
+    res.json({ ok: false, reason: "Credentials are the dashboard record ID — update both secrets with real OAuth values" });
+    return;
+  }
+
+  const token = await getAccessToken();
+  if (!token) {
+    res.json({ ok: false, reason: "Token exchange failed — check CLIENT_ID and CLIENT_SECRET" });
+    return;
+  }
+
+  // Quick search ping via MCP
+  const ping = (await callMcp(token, "search_catalog", {
+    query: "coffee",
+    filters: { available: true, ships_to: { country: "CA" } },
+    context: { address_country: "CA" },
+    pagination: { limit: 1 },
+  })) as McpSearchResult;
+
+  const products = ping.result?.structuredContent?.products ?? [];
+  const pingOk = !ping.error && products.length >= 0;
+
+  res.json({
+    ok: pingOk,
+    tokenObtained: true,
+    productsFound: products.length,
+    reason: pingOk
+      ? "Shopify Global Catalog API is live"
+      : `Catalog ping error: ${ping.error?.message ?? "unknown"}`,
+    detail: ping.error ?? undefined,
+  });
+});
+
+// ─── GET /api/catalog/search ──────────────────────────────────────────────────
+// Query params: q (required), limit (1-10), shipsTo (ISO-2, default CA),
+//               intent (buyer intent string), maxPrice (cents)
+router.get("/catalog/search", async (req, res) => {
+  const { q, limit = "8", shipsTo = "CA", intent, maxPrice } = req.query as Record<string, string>;
+
+  if (!q) {
+    res.status(400).json({ error: "q query param is required" });
+    return;
+  }
+
+  const token = await getAccessToken();
+  if (!token) {
+    res.json({
+      source: "unavailable",
+      products: [],
+      reason:
+        "Shopify Catalog credentials not configured. Update SHOPIFY_CATALOG_CLIENT_ID and SHOPIFY_CATALOG_CLIENT_SECRET.",
+    });
+    return;
+  }
+
+  const limitNum = Math.min(10, Math.max(1, parseInt(limit, 10) || 8));
+
+  const catalogArgs: Record<string, unknown> = {
+    query: q,
+    filters: {
+      available: true,
+      ships_to: { country: shipsTo },
+      ...(maxPrice ? { price: { max: parseInt(maxPrice, 10) } } : {}),
+    },
+    context: {
+      address_country: shipsTo,
+      ...(intent ? { intent } : {}),
+    },
+    pagination: { limit: limitNum },
+  };
+
+  try {
+    const raw = (await callMcp(token, "search_catalog", catalogArgs)) as McpSearchResult;
+
+    if (raw.error) {
+      logger.warn({ error: raw.error }, "shopify-catalog: search error");
+      res.status(500).json({ error: "Catalog search failed", detail: raw.error });
+      return;
+    }
+
+    const items = raw.result?.structuredContent?.products ?? [];
+    const products = normalizeProducts(items);
+
+    res.json({ source: "shopify-global-catalog", query: q, shipsTo, count: products.length, products });
+  } catch (err) {
+    logger.error({ err }, "shopify-catalog: search threw");
+    res.status(500).json({ error: "Failed to search Shopify Catalog", detail: String(err) });
+  }
+});
+
+// ─── POST /api/catalog/mcp ────────────────────────────────────────────────────
+// Raw MCP proxy — body: { toolName, catalogArgs, profileUrl? }
+// Handles the correct params.arguments.meta placement automatically.
+router.post("/catalog/mcp", async (req, res) => {
+  const {
+    toolName = "search_catalog",
+    catalogArgs = {},
+    profileUrl,
+  } = req.body as { toolName?: string; catalogArgs?: Record<string, unknown>; profileUrl?: string };
+
+  const token = await getAccessToken();
+  if (!token) {
+    res.json({ source: "unavailable", reason: "Shopify Catalog credentials not configured" });
+    return;
+  }
+
+  const profile =
+    profileUrl ??
+    (() => {
+      const proto = req.headers["x-forwarded-proto"] ?? "https";
+      const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+      return host ? `${proto}://${host}/api/ucp-agent-profile` : SHOPIFY_EXAMPLE_PROFILE;
+    })();
+
+  try {
+    const data = await callMcp(token, toolName, catalogArgs, profile);
+    res.json(data);
+  } catch (err) {
+    logger.error({ err }, "shopify-catalog: mcp proxy threw");
+    res.status(500).json({ error: "MCP proxy failed", detail: String(err) });
+  }
 });
 
 export default router;
