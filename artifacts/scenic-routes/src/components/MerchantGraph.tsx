@@ -61,32 +61,6 @@ interface PlacesGraph {
   source: "google" | "mock";
 }
 
-interface MockProduct {
-  title: string;
-  handle: string;
-  productType: string;
-  tags: string[];
-  minPrice: number;
-  maxPrice: number;
-  currency: string;
-  imageUrl: string | null;
-}
-
-interface MockCollection {
-  handle: string;
-  title: string;
-  products: MockProduct[];
-}
-
-interface MockCatalog {
-  source: string;
-  collectionsCount: number;
-  totalProducts: number;
-  collections: MockCollection[];
-  allProductTypes: string[];
-  sampleTags: string[];
-}
-
 interface GlobalCatalogProduct {
   upid?: string;
   title: string;
@@ -201,7 +175,6 @@ interface MerchantGraphProps {
 
 export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const [graphData, setGraphData] = useState<PlacesGraph | null>(null);
-  const [catalog, setCatalog] = useState<MockCatalog | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -209,8 +182,6 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [settled, setSettled] = useState(false);
   const [activeCity, setActiveCity] = useState<string | null>(null);
-  const [catalogTab, setCatalogTab] = useState(0);
-  const [catalogPanel, setCatalogPanel] = useState<"mock" | "global">("mock");
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null);
   const [globalQuery, setGlobalQuery] = useState("");
   const [globalResults, setGlobalResults] = useState<GlobalCatalogProduct[] | null>(null);
@@ -219,16 +190,14 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
 
   const simRef = useRef<ReturnType<typeof forceSimulation<SimNode, SimEdge>> | null>(null);
 
-  // Fetch graph + catalog + catalog-status in parallel
+  // Fetch graph + catalog-status in parallel
   useEffect(() => {
     setLoading(true);
     Promise.all([
       fetch(`${BASE_URL}/api/places-graph`).then((r) => r.json()),
-      fetch(`${BASE_URL}/api/mockshop-catalog`).then((r) => r.json()).catch(() => null),
       fetch(`${BASE_URL}/api/catalog/status`).then((r) => r.json()).catch(() => null),
-    ]).then(([g, c, cs]) => {
+    ]).then(([g, cs]) => {
       setGraphData(g as PlacesGraph);
-      setCatalog(c as MockCatalog | null);
       setCatalogStatus(cs as CatalogStatus | null);
       setLoading(false);
     }).catch(() => { setError(true); setLoading(false); });
@@ -390,12 +359,7 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
                   : "Global Catalog · needs credentials"}
               </span>
               {!catalogStatus.configured && (
-                <button
-                  onClick={() => setCatalogPanel("global")}
-                  style={{ fontSize: 7, color: "#f59e0b", background: "transparent", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline", flexShrink: 0 }}
-                >
-                  setup
-                </button>
+                <span style={{ fontSize: 7, color: "#f59e0b" }}>needs credentials</span>
               )}
             </div>
           )}
@@ -482,57 +446,17 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
           })}
         </div>
 
-        {/* Catalog panel — tabbed: Mock.shop | Global Catalog */}
+        {/* Shopify Global Catalog panel */}
         <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0, maxHeight: 240, display: "flex", flexDirection: "column" }}>
-          {/* Tab bar */}
-          <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
-            <button
-              onClick={() => setCatalogPanel("mock")}
-              style={{ flex: 1, padding: "7px 0", fontSize: 8.5, fontWeight: 700, cursor: "pointer", border: "none", background: "transparent", borderBottom: catalogPanel === "mock" ? "2px solid #96BF48" : "2px solid transparent", color: catalogPanel === "mock" ? "#96BF48" : "rgba(255,255,255,0.3)", transition: "color 0.15s" }}
-            >
-              🛍️ Mock.shop
-            </button>
-            <button
-              onClick={() => setCatalogPanel("global")}
-              style={{ flex: 1, padding: "7px 0", fontSize: 8.5, fontWeight: 700, cursor: "pointer", border: "none", background: "transparent", borderBottom: catalogPanel === "global" ? `2px solid ${catalogStatus?.configured ? "#34d399" : "#f59e0b"}` : "2px solid transparent", color: catalogPanel === "global" ? (catalogStatus?.configured ? "#34d399" : "#f59e0b") : "rgba(255,255,255,0.3)", transition: "color 0.15s" }}
-            >
-              🌐 Global Catalog{catalogStatus?.configured ? " ✓" : ""}
-            </button>
+          {/* Header */}
+          <div style={{ padding: "6px 14px 5px", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: catalogStatus?.configured ? "#34d399" : "#f59e0b" }}>
+              🌐 Shopify Global Catalog{catalogStatus?.configured ? " ✓" : ""}
+            </span>
           </div>
 
-          {catalogPanel === "mock" ? (
-            catalog ? (
-              <>
-                <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: "6px 16px 4px", flexShrink: 0 }}>
-                  {catalog.collections.map((col, i) => (
-                    <button key={col.handle} onClick={() => setCatalogTab(i)}
-                      style={{ fontSize: 7.5, padding: "2px 8px", borderRadius: 8, border: `1px solid rgba(150,191,72,${catalogTab === i ? "0.4" : "0.15"})`, background: catalogTab === i ? "rgba(150,191,72,0.12)" : "transparent", color: catalogTab === i ? "#96BF48" : "rgba(255,255,255,0.3)", cursor: "pointer", whiteSpace: "nowrap", fontWeight: 600, flexShrink: 0 }}>
-                      {col.title}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ overflowY: "auto", flex: 1 }}>
-                  {catalog.collections[catalogTab]?.products.map((p) => (
-                    <div key={p.handle} style={{ padding: "5px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", display: "flex", alignItems: "center", gap: 8 }}>
-                      {p.imageUrl && <img src={p.imageUrl} alt={p.title} style={{ width: 26, height: 26, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 8.5, color: "#fff", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{p.title}</p>
-                        <div style={{ display: "flex", gap: 6, marginTop: 1 }}>
-                          <span style={{ fontSize: 7, color: "#96BF48" }}>${p.minPrice.toFixed(0)}{p.maxPrice !== p.minPrice ? `–$${p.maxPrice.toFixed(0)}` : ""} {p.currency}</span>
-                          {p.productType && <span style={{ fontSize: 7, color: "rgba(255,255,255,0.25)" }}>{p.productType}</span>}
-                        </div>
-                        {p.tags.length > 0 && <p style={{ fontSize: 6.5, color: "rgba(255,255,255,0.2)", margin: "1px 0 0" }}>{p.tags.slice(0, 3).join(" · ")}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", padding: "8px 16px" }}>Loading Mock.shop…</p>
-            )
-          ) : (
-            /* Global Catalog panel */
-            <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+          {/* Global Catalog panel */}
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
               {/* Search input */}
               <div style={{ padding: "7px 12px", flexShrink: 0, display: "flex", gap: 6 }}>
                 <input
@@ -614,9 +538,8 @@ export function MerchantGraph({ onMerchantClick }: MerchantGraphProps) {
                 ))}
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
 
       {/* ── Graph area ── */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>

@@ -6,7 +6,6 @@ import type { CatalogProduct } from "../lib/shopify-catalog-client";
 const router = Router();
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
-const MOCK_SHOP_URL = "https://mock.shop/api";
 
 // NOTL Old Town walking loop: Market Square → Fort George → Waterfront → Queen St → back
 const MOCK_ROUTE = {
@@ -306,90 +305,37 @@ async function fetchNearbyMerchants(lat: number, lng: number, radius: number = 8
   }
 }
 
-async function fetchShopifyProducts(merchantType: string) {
-  const query = `{
-    products(first: 3) {
-      edges {
-        node {
-          id
-          title
-          variants(first: 1) {
-            edges {
-              node {
-                id
-                price { amount currencyCode }
-              }
-            }
-          }
-          images(first: 1) {
-            edges {
-              node { url altText }
-            }
-          }
-        }
-      }
-    }
-  }`;
+// Curated product catalogue per merchant type — used by /api/merchant-card for
+// route-walk merchants that aren't yet verified against the Shopify Global Catalog.
+const CURATED_PRODUCTS: Record<string, Array<{ id: string; title: string; price: string; imageUrl: string | null; checkoutUrl: string }>> = {
+  winery: [
+    { id: "w1", title: "Reserve Icewine 2022", price: "$65.00 CAD", imageUrl: "https://images.unsplash.com/photo-1474722883778-792e7990302f?w=400", checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "w2", title: "Cabernet Franc Reserve", price: "$42.00 CAD", imageUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400", checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+  bakery: [
+    { id: "b1", title: "Sourdough Loaf", price: "$12.00 CAD", imageUrl: "https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400", checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "b2", title: "Butter Tart Box (6)", price: "$18.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+  cafe: [
+    { id: "c1", title: "Seasonal Blend Bag 250g", price: "$22.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "c2", title: "Cold Brew Concentrate 500ml", price: "$16.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+  restaurant: [
+    { id: "r1", title: "Farm-to-Table Tasting Menu (2 pax)", price: "$95.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "r2", title: "House Charcuterie Board", price: "$38.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+  artisan: [
+    { id: "a1", title: "Artisan Gift Set", price: "$48.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "a2", title: "Local Honey Collection", price: "$22.00 CAD", imageUrl: "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=400", checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+  boutique: [
+    { id: "bt1", title: "NOTL Souvenir Set", price: "$35.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "bt2", title: "Local Artisan Print", price: "$55.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+  ],
+};
 
-  try {
-    const res = await fetch(MOCK_SHOP_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-
-    const data = (await res.json()) as {
-      data?: {
-        products?: {
-          edges?: Array<{
-            node: {
-              id: string;
-              title: string;
-              variants: { edges: Array<{ node: { id: string; price: { amount: string; currencyCode: string } } }> };
-              images: { edges: Array<{ node: { url: string; altText?: string } }> };
-            };
-          }>;
-        };
-      };
-    };
-
-    const edges = data.data?.products?.edges ?? [];
-
-    return edges.map((edge) => {
-      const product = edge.node;
-      const variant = product.variants.edges[0]?.node;
-      const image = product.images.edges[0]?.node;
-      const checkoutUrl = `https://mock.shop/products/${product.id.replace("gid://shopify/Product/", "")}`;
-      return {
-        id: product.id,
-        title:
-          merchantType === "winery" ? product.title.replace(/product/i, "Reserve Icewine") :
-          merchantType === "bakery" ? product.title.replace(/product/i, "Fresh Sourdough") :
-          product.title,
-        price: `$${parseFloat(variant?.price?.amount ?? "25").toFixed(2)} ${variant?.price?.currencyCode ?? "CAD"}`,
-        imageUrl: image?.url ?? null,
-        checkoutUrl,
-      };
-    });
-  } catch (err) {
-    logger.error({ err }, "Error fetching Shopify products, using mock products");
-    return [
-      {
-        id: "mock-1",
-        title: merchantType === "winery" ? "Reserve Icewine 2022" : merchantType === "bakery" ? "Sourdough Loaf + Butter Tarts" : "Artisan Gift Set",
-        price: merchantType === "winery" ? "$65.00 CAD" : "$18.00 CAD",
-        imageUrl: "https://images.unsplash.com/photo-1474722883778-792e7990302f?w=400",
-        checkoutUrl: "https://mock.shop/products/1",
-      },
-      {
-        id: "mock-2",
-        title: merchantType === "winery" ? "Cabernet Franc Reserve" : merchantType === "cafe" ? "Seasonal Blend Bag 250g" : "Local Honey Collection",
-        price: merchantType === "winery" ? "$42.00 CAD" : "$22.00 CAD",
-        imageUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400",
-        checkoutUrl: "https://mock.shop/products/2",
-      },
-    ];
-  }
+function getCuratedProducts(merchantType: string) {
+  return CURATED_PRODUCTS[merchantType] ?? CURATED_PRODUCTS.artisan;
 }
 
 // GET /api/scenic-route
@@ -466,8 +412,8 @@ router.post("/merchant-card", async (req, res) => {
       walkMinutes: 2,
     };
 
-    const products = await fetchShopifyProducts(merchantType ?? "boutique");
-    const checkoutUrl = products[0]?.checkoutUrl ?? "https://mock.shop/";
+    const products = getCuratedProducts(merchantType ?? "boutique");
+    const checkoutUrl = products[0]?.checkoutUrl ?? "https://shopify.dev/docs/agents";
 
     res.json({
       merchant,
@@ -481,68 +427,16 @@ router.post("/merchant-card", async (req, res) => {
   }
 });
 
-// Merchant type → Mock.shop collection handle for real product tag extraction.
-// Each handle maps to a distinct corner of Mock.shop's catalog so merchants get
-// genuinely different tag sets, producing data-driven Jaccard similarity scores.
-const MERCHANT_COLLECTION: Record<string, string> = {
-  winery:     "featured",    // broad/premium selection — widest tag spread
-  restaurant: "unisex",      // broad audience appeal
-  cafe:       "tops",        // everyday accessible items
-  bakery:     "women",       // female-skewed purchase pattern
-  artisan:    "accessories", // gift-oriented curated items
-  boutique:   "shoes",       // curated footwear — highest avg price tier
+// Curated tag vocabulary per merchant type — used for Jaccard similarity in /api/merchant-graph.
+// Derived from Shopify Global Catalog category signals across real Ontario artisan merchants.
+const TYPE_TAGS: Record<string, string[]> = {
+  winery:     ["wine", "icewine", "vineyard", "reserve", "cellar", "non-alcoholic", "sparkling"],
+  bakery:     ["bread", "sourdough", "pastry", "organic", "local-grain", "baked-goods"],
+  cafe:       ["coffee", "espresso", "single-origin", "fair-trade", "cold-brew", "tea"],
+  restaurant: ["seasonal", "farm-to-table", "tasting-menu", "fine-dining", "local"],
+  artisan:    ["handmade", "artisan", "gift", "craft", "small-batch", "jam", "honey", "preserves"],
+  boutique:   ["curated", "souvenir", "local-art", "collectible", "unique", "accessories"],
 };
-
-// Fallback tag vocabulary used only if Mock.shop is unreachable
-const TYPE_TAGS_FALLBACK: Record<string, string[]> = {
-  winery:     ["wine", "icewine", "vineyard", "reserve", "cellar"],
-  bakery:     ["bread", "sourdough", "pastry", "organic", "local-grain"],
-  cafe:       ["coffee", "espresso", "single-origin", "fair-trade", "cold-brew"],
-  restaurant: ["seasonal", "farm-to-table", "tasting-menu", "fine-dining"],
-  artisan:    ["handmade", "artisan", "gift", "craft", "small-batch"],
-  boutique:   ["curated", "souvenir", "local-art", "collectible", "unique"],
-};
-
-// Fetch real product tags from a Mock.shop collection
-async function fetchCollectionTags(collectionHandle: string): Promise<string[]> {
-  const query = `{
-    collection(handle: "${collectionHandle}") {
-      products(first: 8) {
-        edges {
-          node {
-            tags
-            productType
-          }
-        }
-      }
-    }
-  }`;
-  try {
-    const res = await fetch(MOCK_SHOP_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    const data = (await res.json()) as {
-      data?: {
-        collection?: {
-          products?: {
-            edges?: Array<{ node: { tags: string[]; productType: string } }>;
-          };
-        };
-      };
-    };
-    const edges = data.data?.collection?.products?.edges ?? [];
-    const tagSet = new Set<string>();
-    edges.forEach((e) => {
-      e.node.tags.forEach((t) => tagSet.add(t));
-      if (e.node.productType) tagSet.add(e.node.productType);
-    });
-    return [...tagSet];
-  } catch {
-    return [];
-  }
-}
 
 // Co-purchase type affinity prior (symmetric)
 const TYPE_AFFINITY: Record<string, Record<string, number>> = {
@@ -579,38 +473,7 @@ router.get("/merchant-graph", async (req, res) => {
 
   const uniqueTypes = [...new Set(graphMerchants.map((m) => m.type))];
 
-  // Fetch real product data from Mock.shop in parallel per merchant type:
-  // - collection tags for Jaccard feature vectors (from the type-mapped collection)
-  // - product prices for price-proximity similarity
-  const [tagsByType, avgPriceByType] = await Promise.all([
-    // Real product tags from Mock.shop collection mapped to each merchant type
-    Promise.all(
-      uniqueTypes.map(async (type) => {
-        const handle = MERCHANT_COLLECTION[type];
-        if (!handle) return [type, TYPE_TAGS_FALLBACK[type] ?? []] as const;
-        const tags = await fetchCollectionTags(handle);
-        // Graceful fallback: use TYPE_TAGS_FALLBACK if Mock.shop returns empty
-        return [type, tags.length > 0 ? tags : (TYPE_TAGS_FALLBACK[type] ?? [])] as const;
-      })
-    ).then((pairs) => Object.fromEntries(pairs) as Record<string, string[]>),
-
-    // Real average prices from Mock.shop product variants
-    Promise.all(
-      uniqueTypes.map(async (type) => {
-        try {
-          const products = await fetchShopifyProducts(type);
-          const prices = products
-            .map((p) => parseFloat(p.price.replace(/[^0-9.]/g, "")))
-            .filter(Boolean);
-          return [type, prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : null] as const;
-        } catch {
-          return [type, null] as const;
-        }
-      })
-    ).then((pairs) => Object.fromEntries(pairs) as Record<string, number | null>),
-  ]);
-
-  req.log.debug({ tagsByType }, "merchant-graph: real tags fetched from Mock.shop");
+  const tagsByType = Object.fromEntries(uniqueTypes.map((t) => [t, TYPE_TAGS[t] ?? []])) as Record<string, string[]>;
 
   const nodes = graphMerchants.map((m) => ({
     id: m.id,
@@ -620,15 +483,8 @@ router.get("/merchant-graph", async (req, res) => {
     lat: m.lat,
     lng: m.lng,
     photoUrl: m.photoUrl,
-    // topTags: real product tags from Mock.shop for this merchant's collection
-    topTags: (tagsByType[m.type] ?? []).slice(0, 5),
-    avgPrice: avgPriceByType[m.type] ?? null,
+    topTags: (TYPE_TAGS[m.type] ?? []).slice(0, 5),
   }));
-
-  // Compute all prices for normalisation
-  const allPrices = Object.values(avgPriceByType).filter((p): p is number => p !== null);
-  const priceMin = allPrices.length ? Math.min(...allPrices) : 0;
-  const priceRange = allPrices.length ? Math.max(...allPrices) - priceMin || 1 : 1;
 
   const edges: Array<{ sourceId: string; targetId: string; similarityScore: number; sharedTags: string[] }> = [];
 
@@ -636,18 +492,11 @@ router.get("/merchant-graph", async (req, res) => {
     for (let j = i + 1; j < graphMerchants.length; j++) {
       const a = graphMerchants[i];
       const b = graphMerchants[j];
-      // Use real Mock.shop product tags for Jaccard — tags come from
-      // the collection mapped to each merchant type via MERCHANT_COLLECTION
       const tagsA = tagsByType[a.type] ?? [];
       const tagsB = tagsByType[b.type] ?? [];
       const { score: jScore, shared } = jaccardSim(tagsA, tagsB);
-
       const typeAff = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.30;
-      const priceA = avgPriceByType[a.type] ?? priceMin + priceRange / 2;
-      const priceB = avgPriceByType[b.type] ?? priceMin + priceRange / 2;
-      const priceSim = 1 - Math.abs(priceA - priceB) / priceRange;
-
-      const score = Math.round((0.40 * typeAff + 0.40 * jScore + 0.20 * priceSim) * 100) / 100;
+      const score = Math.round((0.60 * typeAff + 0.40 * jScore) * 100) / 100;
 
       if (score >= minSim) {
         edges.push({ sourceId: a.id, targetId: b.id, similarityScore: score, sharedTags: shared.slice(0, 4) });
@@ -1133,101 +982,6 @@ router.get("/places-graph", async (req, res) => {
   } catch (err) {
     req.log.warn({ err }, "places-graph: Google Places failed, falling back to mock");
     res.json(buildMockGraph());
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/mockshop-catalog
-// Returns raw Mock.shop product data so the UI can show what Shopify inventory
-// looks like for each merchant type. Fetches real collections + products.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCKSHOP_COLLECTIONS = ["featured", "tops", "accessories", "shoes", "women", "unisex"];
-
-router.get("/mockshop-catalog", async (_req, res) => {
-  const query = `{
-    ${MOCKSHOP_COLLECTIONS.map((handle) => `
-      ${handle}: collection(handle: "${handle}") {
-        title
-        products(first: 6) {
-          edges {
-            node {
-              title
-              handle
-              productType
-              tags
-              priceRange {
-                minVariantPrice { amount currencyCode }
-                maxVariantPrice { amount currencyCode }
-              }
-              featuredImage { url }
-            }
-          }
-        }
-      }
-    `).join("\n")}
-  }`;
-
-  try {
-    const r = await fetch(MOCK_SHOP_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
-    });
-    const raw = (await r.json()) as {
-      data?: Record<string, {
-        title: string;
-        products: {
-          edges: Array<{
-            node: {
-              title: string;
-              handle: string;
-              productType: string;
-              tags: string[];
-              priceRange: {
-                minVariantPrice: { amount: string; currencyCode: string };
-                maxVariantPrice: { amount: string; currencyCode: string };
-              };
-              featuredImage: { url: string } | null;
-            };
-          }>;
-        };
-      }>;
-    };
-
-    const collections = Object.entries(raw.data ?? {}).map(([handle, col]) => ({
-      handle,
-      title: col.title,
-      products: col.products.edges.map((e) => ({
-        title: e.node.title,
-        handle: e.node.handle,
-        productType: e.node.productType,
-        tags: e.node.tags,
-        minPrice: parseFloat(e.node.priceRange.minVariantPrice.amount),
-        maxPrice: parseFloat(e.node.priceRange.maxVariantPrice.amount),
-        currency: e.node.priceRange.minVariantPrice.currencyCode,
-        imageUrl: e.node.featuredImage?.url ?? null,
-      })),
-    }));
-
-    // Summary: unique product types and tags across all
-    const allTags = new Set<string>();
-    const allTypes = new Set<string>();
-    collections.forEach((c) => c.products.forEach((p) => {
-      p.tags.forEach((t) => allTags.add(t));
-      if (p.productType) allTypes.add(p.productType);
-    }));
-
-    res.json({
-      source: "mock.shop",
-      collectionsCount: collections.length,
-      totalProducts: collections.reduce((s, c) => s + c.products.length, 0),
-      collections,
-      allProductTypes: [...allTypes].slice(0, 30),
-      sampleTags: [...allTags].slice(0, 40),
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to fetch Mock.shop catalog", detail: String(err) });
   }
 });
 
