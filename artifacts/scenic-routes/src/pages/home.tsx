@@ -57,7 +57,9 @@ export default function Home() {
   const [journeyProgress, setJourneyProgress] = useState(0);
   const [watchAlert, setWatchAlert] = useState<{ name: string; type: string } | null>(null);
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
-  const [leftView, setLeftView] = useState<"map" | "graph">("map");
+
+  // Top-level view toggle
+  const [mainView, setMainView] = useState<"journey" | "graph">("journey");
 
   // Dynamic route — set from chat when user picks a location
   const [routeParams, setRouteParams] = useState<{ origin: string; dest: string; mode: string } | null>(null);
@@ -84,7 +86,6 @@ export default function Home() {
   const merchantCardMutation = useGetMerchantCard();
   const { data: mcpTools } = useGetMcpTools();
 
-  // When route loads, extract center from waypoints for merchant search
   useEffect(() => {
     if (route?.waypoints?.length) {
       const mid = Math.floor(route.waypoints.length / 2);
@@ -94,14 +95,10 @@ export default function Home() {
 
   const handlePinClick = useCallback((merchantId: string) => {
     setSelectedMerchantId(merchantId);
-    // Try the already-loaded merchant list first; fall back to MOCK_MERCHANTS
-    // so graph-node clicks always fire the card mutation even before route/merchants load
-    const merchant = (merchants ?? []).find((m) => m.id === merchantId)
-      ?? (window as unknown as Record<string, unknown>).__MOCK_MERCHANTS__ as { id: string; name: string; type: string } | undefined;
-    if (merchant && "name" in merchant) {
-      merchantCardMutation.mutate({ data: { merchantId, merchantName: (merchant as {name:string}).name, merchantType: (merchant as {type:string}).type } });
+    const merchant = (merchants ?? []).find((m) => m.id === merchantId);
+    if (merchant) {
+      merchantCardMutation.mutate({ data: { merchantId, merchantName: merchant.name, merchantType: merchant.type } });
     } else {
-      // Minimal call so the panel opens — server will hydrate from its own data
       merchantCardMutation.mutate({ data: { merchantId, merchantName: merchantId, merchantType: "boutique" } });
     }
   }, [merchants, merchantCardMutation]);
@@ -116,16 +113,13 @@ export default function Home() {
     if (journeyStarted || !mcpEnabled || !route) return;
     setJourneyStarted(true);
     setJourneyProgress(0);
-
     const allMerchants = merchants ?? [];
     const wineries = allMerchants.filter((m) => m.type === "winery");
     let step = 0;
     const totalSteps = 140;
-
     journeyRef.current = setInterval(() => {
       step++;
       setJourneyProgress(step / totalSteps);
-
       if (step === 20 && allMerchants[0]) handlePinClick(allMerchants[0].id);
       if (step === 55 && allMerchants[2]) handlePinClick(allMerchants[2].id);
       if (step === 80 && wineries[0]) {
@@ -137,7 +131,6 @@ export default function Home() {
     }, 110);
   }, [journeyStarted, mcpEnabled, route, merchants, handlePinClick, triggerWatchAlert]);
 
-  // Route request from chat
   const handleRouteRequest = useCallback((origin: string, dest: string, mode: string) => {
     setRouteParams({ origin, dest, mode });
     setMerchantCenter(null);
@@ -178,7 +171,7 @@ export default function Home() {
       className="h-screen w-full overflow-hidden flex flex-col select-none"
       style={{ background: "linear-gradient(135deg, #060810 0%, #0a0d18 50%, #07090f 100%)" }}
     >
-      {/* Top bar — Shopify-style agentic commerce header */}
+      {/* ── Top bar ── */}
       <div className="flex-none flex items-center justify-between px-8" style={{ paddingTop: 14, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
         {/* Brand */}
         <div className="flex items-center gap-3">
@@ -200,27 +193,53 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Center — powered-by pill strip (Shopify video style) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {/* Center — main view toggle */}
+        <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 24, padding: 3, gap: 2, border: "1px solid rgba(255,255,255,0.07)" }}>
+          <button
+            onClick={() => setMainView("journey")}
+            style={{
+              padding: "6px 18px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+              border: "none", cursor: "pointer", letterSpacing: 0.4, textTransform: "uppercase",
+              background: mainView === "journey" ? "rgba(52,211,153,0.18)" : "transparent",
+              color: mainView === "journey" ? "#34d399" : "rgba(255,255,255,0.35)",
+              transition: "all 0.2s",
+            }}
+          >
+            <MapPin style={{ width: 9, height: 9, display: "inline", marginRight: 5 }} />
+            User Journey
+          </button>
+          <button
+            onClick={() => setMainView("graph")}
+            style={{
+              padding: "6px 18px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+              border: "none", cursor: "pointer", letterSpacing: 0.4, textTransform: "uppercase",
+              background: mainView === "graph" ? "rgba(52,211,153,0.18)" : "transparent",
+              color: mainView === "graph" ? "#34d399" : "rgba(255,255,255,0.35)",
+              transition: "all 0.2s",
+            }}
+          >
+            <Network style={{ width: 9, height: 9, display: "inline", marginRight: 5 }} />
+            Network Graph
+          </button>
+        </div>
+
+        {/* Right — live status + powered by */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {[
             { label: "Shopify MCP", color: "#96BF48", dot: "🛍️" },
             { label: "Google Maps", color: "#4285F4", dot: "🗺️" },
             { label: "Claude AI", color: "#D97706", dot: "✦" },
           ].map(({ label, color, dot }) => (
             <div key={label} style={{
-              display: "flex", alignItems: "center", gap: 5,
-              padding: "3px 10px", borderRadius: 20,
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "3px 9px", borderRadius: 20,
               background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.06)",
             }}>
               <span style={{ fontSize: 9 }}>{dot}</span>
-              <span style={{ fontSize: 9, fontWeight: 600, color, letterSpacing: 0.3 }}>{label}</span>
+              <span style={{ fontSize: 8.5, fontWeight: 600, color, letterSpacing: 0.3 }}>{label}</span>
             </div>
           ))}
-        </div>
-
-        {/* Right — live status */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {mcpEnabled ? (
             <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)" }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 8px #34d399" }} className="animate-pulse" />
@@ -240,55 +259,37 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Cinematic split */}
-      <div className="flex-1 flex items-center justify-center px-6 pb-4 gap-0 min-h-0">
-
-        {/* LEFT — Map/Wearable */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
-          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between", width: "min(300px, 42vw)" }}>
-            <span>Navigation & Discovery</span>
-            {/* Map / Graph toggle */}
-            <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 20, padding: 2, gap: 2 }}>
-              <button
-                onClick={() => setLeftView("map")}
-                style={{ padding: "2px 10px", borderRadius: 18, fontSize: 9, fontWeight: 600, border: "none", cursor: "pointer", letterSpacing: 0.5, textTransform: "uppercase",
-                  background: leftView === "map" ? "rgba(52,211,153,0.2)" : "transparent",
-                  color: leftView === "map" ? "#34d399" : "rgba(255,255,255,0.3)",
-                }}
-              >
-                <MapPin style={{ width: 8, height: 8, display: "inline", marginRight: 3 }} />Map
-              </button>
-              <button
-                onClick={() => setLeftView("graph")}
-                style={{ padding: "2px 10px", borderRadius: 18, fontSize: 9, fontWeight: 600, border: "none", cursor: "pointer", letterSpacing: 0.5, textTransform: "uppercase",
-                  background: leftView === "graph" ? "rgba(52,211,153,0.2)" : "transparent",
-                  color: leftView === "graph" ? "#34d399" : "rgba(255,255,255,0.3)",
-                }}
-              >
-                <Network style={{ width: 8, height: 8, display: "inline", marginRight: 3 }} />Graph
-              </button>
-            </div>
+      {/* ── Content area ── */}
+      <div className="flex-1 min-h-0">
+        {mainView === "graph" ? (
+          /* ── Full-screen Network Graph ── */
+          <div style={{ width: "100%", height: "100%" }}>
+            <MerchantGraph onMerchantClick={handlePinClick} />
           </div>
+        ) : (
+          /* ── User Journey split-screen ── */
+          <div className="flex items-center justify-center px-6 pb-4 gap-0 h-full">
+            {/* LEFT — Map + Watch */}
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
+              <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 4 }}>
+                Navigation & Discovery
+              </div>
 
-          <div style={{
-            width: "min(300px, 42vw)", height: "min(580px, 78vh)",
-            borderRadius: 44, background: "#0f0f14",
-            border: "2px solid #1e2030",
-            boxShadow: "0 0 0 1px #0a0a10, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)",
-            display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
-          }}>
-            <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
-            <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
-            <div style={{ position: "absolute", left: -4, top: "44%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
-            <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#1a1a24", borderRadius: "0 4px 4px 0", border: "1px solid #2a2a38" }} />
+              <div style={{
+                width: "min(300px, 42vw)", height: "min(580px, 78vh)",
+                borderRadius: 44, background: "#0f0f14",
+                border: "2px solid #1e2030",
+                boxShadow: "0 0 0 1px #0a0a10, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04)",
+                display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
+              }}>
+                <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+                <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+                <div style={{ position: "absolute", left: -4, top: "44%", width: 4, height: 22, background: "#1a1a24", borderRadius: "4px 0 0 4px", border: "1px solid #2a2a38" }} />
+                <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#1a1a24", borderRadius: "0 4px 4px 0", border: "1px solid #2a2a38" }} />
 
-            <PhoneStatusBar side="map" />
+                <PhoneStatusBar side="map" />
 
-            <div className="flex-1 relative overflow-hidden">
-              {leftView === "graph" ? (
-                <MerchantGraph onMerchantClick={handlePinClick} />
-              ) : (
-                <>
+                <div className="flex-1 relative overflow-hidden">
                   <MapView
                     route={route ?? null}
                     merchants={merchants ?? []}
@@ -315,76 +316,76 @@ export default function Home() {
                       </p>
                     </div>
                   )}
-                </>
+                </div>
+
+                <PhoneHomeIndicator color="#fff" />
+              </div>
+
+              <div style={{ transform: "scale(0.82)", transformOrigin: "top center", marginTop: -4 }}>
+                <AppleWatch alert={watchAlert} progress={journeyProgress} />
+              </div>
+            </div>
+
+            {/* CENTER DIVIDER */}
+            <div style={{ width: 1, alignSelf: "stretch", margin: "20px 0", background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.06) 30%, rgba(255,255,255,0.06) 70%, transparent)" }} />
+            <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 0, overflow: "visible", zIndex: 10 }}>
+              <div style={{ background: "#0d1020", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "6px 14px", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(255,255,255,0.3)", fontWeight: 600 }}>Live</span>
+              </div>
+              {mcpEnabled && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: "#34d399", opacity: 0.6 - i * 0.12, animation: `pulse 1.5s ${i * 0.2}s ease-in-out infinite` }} />
+                  ))}
+                </div>
               )}
             </div>
 
-            <PhoneHomeIndicator color="#fff" />
-          </div>
+            {/* RIGHT — Claude agent */}
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
+              <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
+                Agentic Commerce
+              </div>
 
-          <div style={{ transform: "scale(0.82)", transformOrigin: "top center", marginTop: -4 }}>
-            <AppleWatch alert={watchAlert} progress={journeyProgress} />
-          </div>
-        </div>
+              <div style={{
+                width: "min(300px, 42vw)", height: "min(580px, 78vh)",
+                borderRadius: 44, background: "#f5f5f7",
+                border: "2px solid #e0e0e5",
+                boxShadow: "0 0 0 1px #ccc, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.9)",
+                display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
+              }}>
+                <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
+                <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
+                <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#d0d0d8", borderRadius: "0 4px 4px 0", border: "1px solid #bbb" }} />
 
-        {/* CENTER DIVIDER */}
-        <div style={{ width: 1, alignSelf: "stretch", margin: "20px 0", background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.06) 30%, rgba(255,255,255,0.06) 70%, transparent)" }} />
-        <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: 0, overflow: "visible", zIndex: 10 }}>
-          <div style={{ background: "#0d1020", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "6px 14px", whiteSpace: "nowrap" }}>
-            <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: "rgba(255,255,255,0.3)", fontWeight: 600 }}>Live</span>
-          </div>
-          {mcpEnabled && (
-            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} style={{ width: 3, height: 3, borderRadius: "50%", background: "#34d399", opacity: 0.6 - i * 0.12, animation: `pulse 1.5s ${i * 0.2}s ease-in-out infinite` }} />
-              ))}
+                <PhoneStatusBar side="chat" />
+
+                <div className="flex-1 overflow-hidden" style={{ background: "#f5f5f7" }}>
+                  <AiChat
+                    merchants={merchants ?? []}
+                    routeContext={routeContext}
+                    journeyProgress={journeyProgress}
+                    journeyStarted={journeyStarted}
+                    mcpEnabled={mcpEnabled}
+                    onMcpEnable={() => setMcpEnabled(true)}
+                    onRouteRequest={handleRouteRequest}
+                    onStartJourney={handleStartJourney}
+                    userPosition={userPosition}
+                    onMerchantFocus={handlePinClick}
+                  />
+                </div>
+
+                <PhoneHomeIndicator color="#000" />
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.35 }}>
+                {["Shopify", "Claude", "Maps"].map((name) => (
+                  <span key={name} style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{name}</span>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* RIGHT — Claude agent */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 h-full relative">
-          <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.2)", marginBottom: 2 }}>
-            Agentic Commerce
           </div>
-
-          <div style={{
-            width: "min(300px, 42vw)", height: "min(580px, 78vh)",
-            borderRadius: 44, background: "#f5f5f7",
-            border: "2px solid #e0e0e5",
-            boxShadow: "0 0 0 1px #ccc, 0 50px 100px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.9)",
-            display: "flex", flexDirection: "column", overflow: "hidden", position: "relative",
-          }}>
-            <div style={{ position: "absolute", left: -4, top: "22%", width: 4, height: 32, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
-            <div style={{ position: "absolute", left: -4, top: "35%", width: 4, height: 22, background: "#d0d0d8", borderRadius: "4px 0 0 4px", border: "1px solid #bbb" }} />
-            <div style={{ position: "absolute", right: -4, top: "30%", width: 4, height: 44, background: "#d0d0d8", borderRadius: "0 4px 4px 0", border: "1px solid #bbb" }} />
-
-            <PhoneStatusBar side="chat" />
-
-            <div className="flex-1 overflow-hidden" style={{ background: "#f5f5f7" }}>
-              <AiChat
-                merchants={merchants ?? []}
-                routeContext={routeContext}
-                journeyProgress={journeyProgress}
-                journeyStarted={journeyStarted}
-                mcpEnabled={mcpEnabled}
-                onMcpEnable={() => setMcpEnabled(true)}
-                onRouteRequest={handleRouteRequest}
-                onStartJourney={handleStartJourney}
-                userPosition={userPosition}
-                onMerchantFocus={handlePinClick}
-              />
-            </div>
-
-            <PhoneHomeIndicator color="#000" />
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.35 }}>
-            {["Shopify", "Claude", "Maps"].map((name) => (
-              <span key={name} style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: "rgba(255,255,255,0.8)", fontWeight: 600 }}>{name}</span>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
