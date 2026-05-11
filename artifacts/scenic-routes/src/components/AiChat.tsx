@@ -634,19 +634,28 @@ export function AiChat({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#f5f5f7" }}>
-      {/* Header */}
-      <div style={{ padding: "8px 16px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>✦</div>
-        <div>
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827" }}>Claude</p>
-          <p style={{ margin: 0, fontSize: 10, color: "#6b7280" }}>{mcpEnabled ? "Explore Route MCP · Canada-wide" : "Explore Route MCP · Standby"}</p>
+      {/* Header — Shopify-style agent identity bar */}
+      <div style={{ padding: "10px 16px 10px", borderBottom: "1px solid #e5e7eb", background: "#fff", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <div style={{ width: 34, height: 34, borderRadius: 11, background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, boxShadow: "0 2px 8px rgba(99,102,241,0.3)" }}>✦</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", letterSpacing: -0.1 }}>Claude</p>
+          <p style={{ margin: 0, fontSize: 10, color: "#9ca3af" }}>
+            {mcpEnabled ? "Explore Route MCP · active" : "Explore Route MCP · Standby"}
+          </p>
         </div>
-        {mcpEnabled && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-            <CheckCircle2 style={{ width: 10, height: 10, color: "#059669" }} />
-            <span style={{ fontSize: 9, color: "#059669", fontWeight: 700, letterSpacing: 0.5 }}>MCP ON</span>
-          </div>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {mcpEnabled ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#059669" }} className="animate-pulse" />
+              <span style={{ fontSize: 9, color: "#059669", fontWeight: 700, letterSpacing: 0.5 }}>MCP ON</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: "#f9fafb", border: "1px solid #e5e7eb" }}>
+              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#d1d5db" }} />
+              <span style={{ fontSize: 9, color: "#9ca3af", fontWeight: 600, letterSpacing: 0.5 }}>STANDBY</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
@@ -661,28 +670,60 @@ export function AiChat({
         <div ref={bottomRef} />
       </div>
 
-      {/* Suggested prompts */}
+      {/* Suggested prompts — Shopify-style quick action chips */}
       {!isStreaming && (
-        <div style={{ padding: "4px 14px 8px", display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <div style={{ padding: "6px 14px 8px", display: "flex", flexWrap: "wrap", gap: 5 }}>
           {suggestedPrompts.map((p) => (
-            <button key={p} onClick={() => sendMessage(p)} style={{ padding: "5px 10px", borderRadius: 20, fontSize: 11, fontWeight: 500, background: "#fff", color: "#374151", border: "1px solid #e5e7eb", cursor: "pointer" }}>
+            <button
+              key={p}
+              onClick={() => sendMessage(p)}
+              style={{
+                padding: "5px 11px", borderRadius: 20, fontSize: 11, fontWeight: 500,
+                background: "#fff", color: "#374151",
+                border: "1px solid #e5e7eb", cursor: "pointer",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#a5b4fc"; (e.currentTarget as HTMLButtonElement).style.background = "#faf5ff"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; (e.currentTarget as HTMLButtonElement).style.background = "#fff"; }}
+            >
               {p}
             </button>
           ))}
         </div>
       )}
 
-      {/* Input */}
-      <div style={{ padding: "8px 12px 10px", borderTop: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f3f4f6", borderRadius: 24, padding: "8px 12px 8px 16px" }}>
+      {/* Input — Shopify-style agent input with animated send */}
+      <div style={{ padding: "6px 12px 12px", borderTop: "1px solid #f3f4f6", background: "#fff", flexShrink: 0 }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          background: "#f9fafb", borderRadius: 26,
+          padding: "8px 8px 8px 16px",
+          border: "1px solid #e5e7eb",
+          transition: "border-color 0.15s",
+        }}>
           <input
             value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder={mcpEnabled ? (hasRoute ? "Ask about stops, food, shopping…" : "Or just ask me anything…") : "Ask Claude anything…"}
+            onFocus={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#a5b4fc"; }}
+            onBlur={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#e5e7eb"; }}
+            placeholder={mcpEnabled ? (hasRoute ? "Ask about stops, food, shopping…" : "Where would you like to explore?") : "Ask Claude anything…"}
             disabled={isStreaming}
             style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#111827", outline: "none" }}
           />
-          <button onClick={() => sendMessage()} disabled={!input.trim() || isStreaming} style={{ width: 30, height: 30, borderRadius: "50%", background: input.trim() && !isStreaming ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb", border: "none", cursor: input.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.2s", flexShrink: 0 }}>
+          <button
+            onClick={() => sendMessage()}
+            disabled={!input.trim() || isStreaming}
+            style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: input.trim() && !isStreaming ? "linear-gradient(135deg, #6366f1, #8b5cf6)" : "#e5e7eb",
+              border: "none", cursor: input.trim() && !isStreaming ? "pointer" : "default",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.2s, transform 0.1s",
+              flexShrink: 0,
+            }}
+            onMouseDown={(e) => { if (input.trim()) (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.92)"; }}
+            onMouseUp={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+          >
             <Send style={{ width: 13, height: 13, color: input.trim() && !isStreaming ? "#fff" : "#9ca3af" }} />
           </button>
         </div>

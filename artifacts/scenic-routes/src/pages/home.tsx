@@ -178,28 +178,62 @@ export default function Home() {
       className="h-screen w-full overflow-hidden flex flex-col select-none"
       style={{ background: "linear-gradient(135deg, #060810 0%, #0a0d18 50%, #07090f 100%)" }}
     >
-      {/* Top bar */}
-      <div className="flex-none flex items-center justify-between px-8 py-3">
-        <div className="flex items-center gap-2.5">
-          <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg, #34d399, #059669)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <MapPin style={{ width: 14, height: 14, color: "#fff" }} />
+      {/* Top bar — Shopify-style agentic commerce header */}
+      <div className="flex-none flex items-center justify-between px-8" style={{ paddingTop: 14, paddingBottom: 10, borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+        {/* Brand */}
+        <div className="flex items-center gap-3">
+          <div style={{
+            width: 32, height: 32, borderRadius: 10,
+            background: "linear-gradient(135deg, #34d399 0%, #059669 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 0 16px rgba(52,211,153,0.35)",
+          }}>
+            <MapPin style={{ width: 15, height: 15, color: "#fff" }} />
           </div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", letterSpacing: 0.5, textTransform: "uppercase" }}>
-            Explore Route MCP
-          </span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: -0.2, lineHeight: 1 }}>
+              Explore Route MCP
+            </div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1.5, textTransform: "uppercase", marginTop: 2 }}>
+              Agentic Commerce
+            </div>
+          </div>
         </div>
-        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: 1, textTransform: "uppercase" }}>
-          Shopify × Google Maps × Claude
-        </div>
+
+        {/* Center — powered-by pill strip (Shopify video style) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {mcpEnabled && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 20, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)" }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 6px #34d399" }} className="animate-pulse" />
-              <span style={{ fontSize: 10, color: "#34d399", fontWeight: 600, letterSpacing: 0.5 }}>MCP ACTIVE</span>
+          {[
+            { label: "Shopify MCP", color: "#96BF48", dot: "🛍️" },
+            { label: "Google Maps", color: "#4285F4", dot: "🗺️" },
+            { label: "Claude AI", color: "#D97706", dot: "✦" },
+          ].map(({ label, color, dot }) => (
+            <div key={label} style={{
+              display: "flex", alignItems: "center", gap: 5,
+              padding: "3px 10px", borderRadius: 20,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.07)",
+            }}>
+              <span style={{ fontSize: 9 }}>{dot}</span>
+              <span style={{ fontSize: 9, fontWeight: 600, color, letterSpacing: 0.3 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Right — live status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {mcpEnabled ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20, background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#34d399", boxShadow: "0 0 8px #34d399" }} className="animate-pulse" />
+              <span style={{ fontSize: 10, color: "#34d399", fontWeight: 700, letterSpacing: 0.5 }}>LIVE</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "rgba(255,255,255,0.2)" }} />
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontWeight: 600, letterSpacing: 0.5 }}>STANDBY</span>
             </div>
           )}
           {mcpTools && (
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", padding: "4px 10px", borderRadius: 20, border: "1px solid rgba(255,255,255,0.06)", letterSpacing: 0.3 }}>
               {mcpTools.length} tools
             </div>
           )}
