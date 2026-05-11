@@ -40,6 +40,11 @@ const MOCK_MERCHANTS = [
     description: "Family-run artisan jam makers since 1927. Over 30 flavours of preserves, chutneys, and marmalades made with Niagara fruit.",
     isOpen: true,
     walkMinutes: 1,
+    isOnShopify: true,
+    story: "Ruth Greaves started making jam in this exact kitchen in 1927. Her great-granddaughter now runs it — the lavender honey recipe hasn't changed once.",
+    inventoryConfidence: 92,
+    recentVisitors: 6,
+    hoursAgoConfirmed: 1,
   },
   {
     id: "balzacs-coffee",
@@ -54,6 +59,11 @@ const MOCK_MERCHANTS = [
     description: "Artisan coffee roasters with a gorgeous heritage-building café. Perfect mid-walk espresso stop.",
     isOpen: true,
     walkMinutes: 2,
+    isOnShopify: true,
+    story: "They roast every batch in-house every Monday morning. The Ethiopian single-origin they're pouring this week won a national award — and they're almost out.",
+    inventoryConfidence: 78,
+    recentVisitors: 4,
+    hoursAgoConfirmed: 3,
   },
   {
     id: "treadwell-farm",
@@ -68,6 +78,11 @@ const MOCK_MERCHANTS = [
     description: "Award-winning farm-to-table bistro sourcing directly from Niagara producers. Celebrated for seasonal menus and local wine pairings.",
     isOpen: true,
     walkMinutes: 4,
+    isOnShopify: true,
+    story: "Stephen Treadwell drives to three farms every morning before 7am. What's on the menu today wasn't decided until he got back.",
+    inventoryConfidence: 85,
+    recentVisitors: 5,
+    hoursAgoConfirmed: 2,
   },
   {
     id: "shaw-festival-shop",
@@ -82,6 +97,11 @@ const MOCK_MERCHANTS = [
     description: "Curated theatre merchandise, books, prints, and gifts at North America's premier Shaw festival. One-of-a-kind souvenirs.",
     isOpen: true,
     walkMinutes: 5,
+    isOnShopify: true,
+    story: "The signed programme from the 1962 opening season is framed above the till. The current run sold out in four hours — the shop has the cast tote bag if you missed it.",
+    inventoryConfidence: 70,
+    recentVisitors: 3,
+    hoursAgoConfirmed: 4,
   },
   {
     id: "oliv-tasting-room",
@@ -96,6 +116,11 @@ const MOCK_MERCHANTS = [
     description: "Premium artisan olive oils and aged balsamic vinegars. Taste before you buy — pairings and gift sets available.",
     isOpen: true,
     walkMinutes: 2,
+    isOnShopify: true,
+    story: "They import directly from three family groves in Crete and Tuscany. You can taste twelve oils before you buy — the 25-year barrel-aged balsamic is the one people come back for.",
+    inventoryConfidence: 88,
+    recentVisitors: 5,
+    hoursAgoConfirmed: 1,
   },
   {
     id: "niagara-home-bakery",
@@ -110,6 +135,11 @@ const MOCK_MERCHANTS = [
     description: "Beloved local bakery with fresh-baked sourdough, butter tarts, and Niagara peach pastries. A NOTL institution.",
     isOpen: true,
     walkMinutes: 1,
+    isOnShopify: true,
+    story: "Maria has been baking since 4am every day for thirty-one years. The butter tarts sell out by noon — it's 11:47 right now.",
+    inventoryConfidence: 61,
+    recentVisitors: 2,
+    hoursAgoConfirmed: 5,
   },
   {
     id: "peller-estates",
@@ -124,20 +154,31 @@ const MOCK_MERCHANTS = [
     description: "Award-winning estate winery on the outskirts of Old Town. Famous for Icewine and vineyard restaurant.",
     isOpen: true,
     walkMinutes: 18,
+    isOnShopify: true,
+    story: "The 2021 Icewine grapes were hand-harvested at 3am in January when the temperature hit −10°C. They made 1,200 bottles. Forty-three are left.",
+    inventoryConfidence: 94,
+    recentVisitors: 8,
+    hoursAgoConfirmed: 1,
   },
+  // Ghost merchant — not yet on Shopify, discovered through explorer crowdsourcing
   {
-    id: "fort-george-shop",
-    name: "Fort George Historic Gift Shop",
-    type: "boutique",
-    lat: 43.2617,
-    lng: -79.058,
-    address: "51 Queen's Parade, Niagara-on-the-Lake, ON",
-    rating: 4.5,
-    distanceFromRouteKm: 0.1,
-    photoUrl: "https://images.unsplash.com/photo-1557931406-ac11b1b58a26?w=400",
-    description: "Parks Canada heritage gifts, War of 1812 books, local history maps, and handcrafted reproductions at this national historic site.",
-    isOpen: true,
-    walkMinutes: 8,
+    id: "ceramic-studio-ghost",
+    name: "Mariana's Ceramic Studio",
+    type: "artisan",
+    lat: 43.2558,
+    lng: -79.0725,
+    address: "Behind 74 Queen St, Niagara-on-the-Lake, ON",
+    rating: null,
+    distanceFromRouteKm: 0.08,
+    photoUrl: "https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=400",
+    description: "A ceramics studio discovered by 4 explorers this week. No website, no social media — just a handwritten sign on the gate.",
+    isOpen: null,
+    walkMinutes: 2,
+    isOnShopify: false,
+    story: "She's been throwing pots in this courtyard for twenty-two years. She learned from her grandmother in Portugal. The spring collection she just finished took four months.",
+    inventoryConfidence: null,
+    recentVisitors: 4,
+    hoursAgoConfirmed: 2,
   },
 ];
 
@@ -220,7 +261,7 @@ async function fetchNearbyMerchants(lat: number, lng: number, radius: number = 8
       return MOCK_MERCHANTS;
     }
 
-    return data.results.slice(0, 8).map((place) => {
+    return data.results.slice(0, 8).map((place, i) => {
       const pType =
         place.types?.includes("bakery") ? "bakery" :
         place.types?.includes("cafe") ? "cafe" :
@@ -230,21 +271,31 @@ async function fetchNearbyMerchants(lat: number, lng: number, radius: number = 8
       const distLat = (place.geometry?.location?.lat ?? lat) - lat;
       const distLng = (place.geometry?.location?.lng ?? lng) - lng;
       const distKm = Math.round(Math.sqrt(distLat * distLat + distLng * distLng) * 111 * 10) / 10;
+      // Simulate time-decayed crowdsourced inventory confidence
+      const baseConfidence = 65 + Math.floor(Math.random() * 30);
+      const hoursAgo = 1 + Math.floor(Math.random() * 5);
+      const confidence = Math.round(baseConfidence * (1 - hoursAgo / 24 * 0.25));
+      const visitors = 2 + Math.floor(Math.random() * 6);
       return {
         id: place.place_id,
         name: place.name,
         type: pType,
         lat: place.geometry?.location?.lat ?? lat,
         lng: place.geometry?.location?.lng ?? lng,
-        address: place.vicinity ?? "Niagara-on-the-Lake, ON",
+        address: place.vicinity ?? "",
         rating: place.rating ?? null,
         distanceFromRouteKm: distKm,
         photoUrl: photoRef
           ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${GOOGLE_MAPS_API_KEY}`
           : null,
-        description: `Local ${pType} in Niagara-on-the-Lake Old Town.`,
+        description: `Local ${pType} — ${visitors} explorers visited recently.`,
         isOpen: place.opening_hours?.open_now ?? null,
         walkMinutes: Math.round(distKm * 12),
+        isOnShopify: i < 7,
+        story: null,
+        inventoryConfidence: confidence,
+        recentVisitors: visitors,
+        hoursAgoConfirmed: hoursAgo,
       };
     });
   } catch (err) {

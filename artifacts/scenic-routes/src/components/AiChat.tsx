@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -11,6 +11,11 @@ interface Merchant {
   walkMinutes?: number | null;
   photoUrl?: string | null;
   distanceFromRouteKm?: number | null;
+  story?: string | null;
+  inventoryConfidence?: number | null;
+  recentVisitors?: number | null;
+  hoursAgoConfirmed?: number | null;
+  isOnShopify?: boolean;
 }
 
 interface RouteContext {
@@ -30,6 +35,7 @@ interface ChatMessage {
   skipSources?: boolean;
   permissionCard?: boolean;
   merchantCard?: Merchant;
+  ghostMerchantCard?: Merchant;
   mcpActivated?: boolean;
   journeyCard?: boolean;
   locationCard?: boolean;
@@ -82,6 +88,19 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
+function ConfidenceBadge({ score, visitors, hoursAgo }: { score: number; visitors: number; hoursAgo: number }) {
+  const color = score >= 80 ? "#059669" : score >= 60 ? "#d97706" : "#dc2626";
+  const bg = score >= 80 ? "#f0fdf4" : score >= 60 ? "#fffbeb" : "#fef2f2";
+  const border = score >= 80 ? "#bbf7d0" : score >= 60 ? "#fde68a" : "#fecaca";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 8px", borderRadius: 20, background: bg, border: `1px solid ${border}`, marginTop: 6 }}>
+      <Users style={{ width: 9, height: 9, color }} />
+      <span style={{ fontSize: 10, fontWeight: 700, color }}>{score}% in stock</span>
+      <span style={{ fontSize: 9, color: "#9ca3af" }}>· {visitors} visitors · {hoursAgo}h ago</span>
+    </div>
+  );
+}
+
 function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id: string) => void }) {
   return (
     <div
@@ -93,12 +112,12 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
       }}
     >
       {merchant.photoUrl && (
-        <img src={merchant.photoUrl} alt={merchant.name} style={{ width: "100%", height: 90, objectFit: "cover", display: "block" }}
+        <img src={merchant.photoUrl} alt={merchant.name} style={{ width: "100%", height: 80, objectFit: "cover", display: "block" }}
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
       )}
       <div style={{ padding: "10px 12px 12px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-          <div>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: "#111827", lineHeight: 1.3, margin: 0 }}>
               {getMerchantEmoji(merchant.type)} {merchant.name}
             </p>
@@ -111,9 +130,27 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
             </div>
           )}
         </div>
-        <p style={{ fontSize: 11, color: "#6b7280", marginTop: 5, lineHeight: 1.4, margin: "5px 0 0" }}>
-          {merchant.description.length > 80 ? merchant.description.slice(0, 78) + "…" : merchant.description}
-        </p>
+
+        {/* Inventory confidence badge */}
+        {merchant.inventoryConfidence != null && merchant.recentVisitors != null && merchant.hoursAgoConfirmed != null && (
+          <ConfidenceBadge
+            score={merchant.inventoryConfidence}
+            visitors={merchant.recentVisitors}
+            hoursAgo={merchant.hoursAgoConfirmed}
+          />
+        )}
+
+        {/* Human story — the key differentiator */}
+        {merchant.story ? (
+          <p style={{ fontSize: 11, color: "#374151", marginTop: 7, lineHeight: 1.5, fontStyle: "italic", borderLeft: "2px solid #e5e7eb", paddingLeft: 8 }}>
+            "{merchant.story}"
+          </p>
+        ) : (
+          <p style={{ fontSize: 11, color: "#6b7280", marginTop: 6, lineHeight: 1.4 }}>
+            {merchant.description.length > 70 ? merchant.description.slice(0, 68) + "…" : merchant.description}
+          </p>
+        )}
+
         <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
           <button onClick={(e) => { e.stopPropagation(); onFocus?.(merchant.id); }} style={{ flex: 1, padding: "6px 0", borderRadius: 10, background: "linear-gradient(135deg, #059669, #34d399)", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
             <ShoppingBag style={{ width: 10, height: 10 }} /> Shop
@@ -122,6 +159,59 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
             <MapPin style={{ width: 10, height: 10 }} /> Map
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
+  const [invited, setInvited] = useState(false);
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #faf5ff, #f3e8ff)",
+      borderRadius: 16, overflow: "hidden",
+      border: "1px solid #d8b4fe", boxShadow: "0 2px 8px rgba(139,92,246,0.1)",
+      marginTop: 8, maxWidth: 240,
+    }}>
+      {merchant.photoUrl && (
+        <div style={{ position: "relative" }}>
+          <img src={merchant.photoUrl} alt={merchant.name} style={{ width: "100%", height: 80, objectFit: "cover", display: "block", filter: "brightness(0.85)" }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <div style={{ position: "absolute", top: 8, left: 8, padding: "2px 8px", borderRadius: 20, background: "rgba(109,40,217,0.85)", display: "flex", alignItems: "center", gap: 4 }}>
+            <Sparkles style={{ width: 9, height: 9, color: "#fff" }} />
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", letterSpacing: 0.5 }}>UNDISCOVERED</span>
+          </div>
+        </div>
+      )}
+      <div style={{ padding: "10px 12px 12px" }}>
+        <p style={{ fontSize: 12, fontWeight: 700, color: "#581c87", margin: "0 0 2px" }}>
+          🏺 {merchant.name}
+        </p>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+          <Users style={{ width: 9, height: 9, color: "#7c3aed" }} />
+          <span style={{ fontSize: 10, color: "#7c3aed", fontWeight: 600 }}>{merchant.recentVisitors ?? 4} explorers found this · not yet online</span>
+        </div>
+        {merchant.story && (
+          <p style={{ fontSize: 11, color: "#6b21a8", lineHeight: 1.5, fontStyle: "italic", margin: "0 0 10px", borderLeft: "2px solid #d8b4fe", paddingLeft: 8 }}>
+            "{merchant.story}"
+          </p>
+        )}
+        <div style={{ fontSize: 10, color: "#7c3aed", marginBottom: 10, lineHeight: 1.5 }}>
+          No website, no social media — found by walkers like you. Stopping here gives this business its first digital moment.
+        </div>
+        {!invited ? (
+          <button
+            onClick={() => setInvited(true)}
+            style={{ width: "100%", padding: "8px 0", borderRadius: 12, background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
+          >
+            <Sparkles style={{ width: 11, height: 11 }} /> Invite to Shopify
+          </button>
+        ) : (
+          <div style={{ padding: "8px 0", borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+            <CheckCircle2 style={{ width: 12, height: 12, color: "#059669" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#059669" }}>Invite sent — Shopify will reach out</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -312,6 +402,7 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
         {msg.locationCard && onLocationSubmit && <LocationCard onSubmit={onLocationSubmit} />}
         {msg.journeyCard && onStart && routeContext && <JourneyStartCard routeContext={routeContext} onStart={onStart} />}
         {msg.merchantCard && <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />}
+        {msg.ghostMerchantCard && <UndiscoveredMerchantCard merchant={msg.ghostMerchantCard} />}
       </div>
     </div>
   );
@@ -431,6 +522,16 @@ export function AiChat({
         { id: `m3b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: merchants[1], skipSources: true },
       ]), 300);
     }
+    // Ghost merchant — the undiscovered digital twin milestone
+    const ghostMerchant = merchants.find((m) => m.isOnShopify === false);
+    if (journeyProgress >= 0.70 && !milestonesFired.has("ghost") && ghostMerchant) {
+      const t = Date.now();
+      setTimeout(() => inject("ghost", [
+        { id: `ghost-a-${t}`, role: "assistant", content: "⚡ Something unusual — explorers found a business this week that has no digital presence at all. No Google listing, no website:", timestamp: new Date(), skipSources: true },
+        { id: `ghost-b-${t}`, role: "assistant", content: "", timestamp: new Date(), ghostMerchantCard: ghostMerchant, skipSources: true },
+      ]), 500);
+    }
+
     if (journeyProgress >= 0.85 && !milestonesFired.has("m4") && merchants[3]) {
       const t = Date.now();
       setTimeout(() => inject("m4", [

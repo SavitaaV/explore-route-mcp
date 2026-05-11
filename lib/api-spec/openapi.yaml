@@ -375,6 +375,21 @@ components:
         walkMinutes:
           type: ["number", "null"]
           description: Minutes to walk from current position
+        story:
+          type: ["string", "null"]
+          description: One-sentence human story about this merchant surfaced by the AI agent
+        inventoryConfidence:
+          type: ["number", "null"]
+          description: 0-100 crowdsourced inventory confidence score, time-decayed
+        recentVisitors:
+          type: ["number", "null"]
+          description: Number of explorers who verified inventory recently
+        hoursAgoConfirmed:
+          type: ["number", "null"]
+          description: Hours since last crowdsourced inventory confirmation
+        isOnShopify:
+          type: boolean
+          description: Whether this merchant has a Shopify store — false means digital twin candidate
       required: [id, name, type, lat, lng, address, rating, distanceFromRouteKm, photoUrl, description, isOpen, walkMinutes]
 
     MerchantCardRequest:
