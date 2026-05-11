@@ -1,0 +1,40 @@
+To build a truly Anticipatory Discovery engine, your ACR (Autonomous Commerce Router) shouldn't just spam the user. It needs to act like a high-end concierge.
+In your Replit prototype, you should define a "Confidence Score" for every recommendation. Only when the score hits a certain threshold (e.g., >85%) does the Agent "interrupt" the user.
+## 1. The Proactive Triggers (The Decision Logic)
+These are the "signals" your ACR monitors to decide exactly when to surface a merchant:
+
+* The "Vibe-Route" Match: The system looks at the user's destination. If they are heading to a "Cottage," it prioritizes regional food, firewood, or outdoor gear Shopify merchants.
+* The "Inventory Rarity" Spike: If a merchant has a "1-of-1" item or the "Last 2 in stock" of a product the user has previously viewed, the ACR triggers an alert. Scarcity + Proximity = Sale.
+* Biometric/Device Context: If the wearable device shows low battery or the car’s fuel is low, the ACR layers a "Shopify Discovery" on top of the "Utility Stop" (e.g., "Charging your car? This Shopify-powered gallery is a 2-min walk away").
+* The "Neighborhood Momentum": If the Autonomous Graph shows that 5 other people on this route stopped at a specific "Shadow Node" (non-Shopify) today, the ACR triggers a "Trending Discovery" to the user.
+
+## 2. The Product Offering: "The Shopify Proximity Protocol"
+You are pitching this as a B2B Growth Engine for Shopify. Here is the value proposition:
+
+   1. For the Agent (The Partner): You provide the "Commerce Context" that Google Maps or Claude doesn't have. You make their travel suggestions actually "shoppable."
+   2. For the Merchant (The Lead): You provide "Intent-Verified Foot Traffic." You aren't sending "window shoppers"; you are sending people who have already "committed" to the detour because of a specific product match.
+   3. For Shopify (The Owner): You provide "Aggressive Merchant Acquisition." You are identifying every successful small business on Google Maps and giving them a "Financial Reason" (unclaimed sales) to join Shopify.
+
+## 3. How to build the "Trigger Engine" in Replit
+In your main.py, create a class called TriggerEngine:
+
+class TriggerEngine:
+    def calculate_trigger_score(user_intent, merchant_data, route_context):
+        # 1. Is it a Vibe Match? (e.g. User likes 'Local Craft' + Merchant is 'Pottery')
+        # 2. Is the detour short? (e.g. < 5 mins)
+        # 3. Is the inventory verified? (The "Data-Healing" pulse)
+        # 4. Is the merchant a 'Siloed Node' that needs a sale to convert?
+        
+        return score # If score > 0.85, trigger push notification
+
+## 4. How to present this on your Shopify Resume:
+Project: The Autonomous Commerce Router (ACR)
+
+* The Concept: Developed a platform-agnostic middleware that uses "Path-as-a-Query" to autonomously match travelers with Shopify and non-Shopify merchants.
+* The 0-to-1: Created an Autonomous Neighborhood Graph that uses "Shadow Edges" to drive real revenue to offline businesses, serving as a high-conversion merchant acquisition funnel for Shopify.
+* The Tech: Built a Model Context Protocol (MCP) server that integrates Google Places API with the Shopify Global Catalog to provide "Zero-Prompt" anticipatory discovery.
+
+## Summary
+You’ve moved from "a map that shows stores" to "a system that acquires stores by proving they belong in the neighborhood graph." This is the definition of a Product Architect—you are building a system that grows itself.
+Shall we define the specific "Shadow Node Notification" that is sent to the non-Shopify merchant to convince them to 'Claim' their store?
+

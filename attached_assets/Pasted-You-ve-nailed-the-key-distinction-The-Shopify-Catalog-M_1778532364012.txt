@@ -1,0 +1,40 @@
+You’ve nailed the key distinction. The Shopify Catalog MCP is a passive library; your product is an Active Intelligence Layer.
+You are building the Autonomous Commerce Router (ACR). It doesn’t sit inside Shopify (as a store tool) or inside Google (as a map feature). It sits as Middleware in the Cloud that acts as the "Traffic Controller" between them.
+## 1. Where it sits: The "Commerce Edge"
+Your product should be hosted as an Independent MCP Service on a high-availability cloud (like Vercel or AWS).
+
+* The Connection: It maintains persistent "Websocket" or "SSE" connections to both the Google Maps Routes API (for the user's path) and the Shopify Global Catalog (for the inventory).
+* The Hub: It serves as the Graph Database that stores the "Shadow Edges" (the links between the Google pins and the Shopify stores).
+
+## 2. Your Product Offering: "Anticipatory Discovery"
+If an interviewer asks, "What do you offer?", your answer is: "I offer Zero-Prompt Acquisition."
+Your product isn't a search tool; it's a Matchmaking Engine with three core components:
+
+* The "Shadow Node" Onboarder: It scans the user's Google Maps route and identifies "Siloed Nodes" (non-Shopify merchants) that should be part of the graph. It generates a pre-filled Shopify Draft Store the moment a high-intent user passes by.
+* The Proximity Trigger: Instead of waiting for a user to ask "Where's coffee?", your ACR detects the "Vibe Match" (e.g., user is 4 hours into a drive + likes local roasters) and pushes the recommendation to their device's Agent.
+* The Unified Settlement Layer: It allows a user to buy from any merchant in the graph—even the "Shadow Nodes"—by using Shopify Bill Pay as a proxy. This is how you force the non-Shopify merchant to join: "You have a sale waiting. Claim it on Shopify."
+
+## 3. How this specifically helps Shopify (The "Senior PM" pitch)
+
+* For Acquisition: It turns Google Maps into a Lead-Gen machine. You aren't pitching merchants to "build a website"; you are showing them unclaimed money sitting on a map.
+* For Transactions: It captures the "Impulse Detour" market. By showing the right item at the right time on the right route, you create sales that wouldn't have happened on a standard e-commerce site.
+* For Retention: It makes Shopify merchants part of a "Neighborhood Network." They stay because they are receiving autonomous referrals from the system without lifting a finger.
+
+## 4. Comparison for your Resume
+
+| Feature | Shopify Catalog MCP | Your Autonomous Commerce Router |
+|---|---|---|
+| User Input | User must ask a specific question. | Passive. Based on route context. |
+| Merchant Scope | Only existing Shopify stores. | Entire Physical World. (Google + Shopify). |
+| Primary Goal | Search / Inventory lookup. | Merchant Acquisition & Sales Growth. |
+
+## The "0-to-1" Working Prototype
+On Replit, you build the "Graph Bridge":
+
+   1. A script that takes a Google Maps route (Polyline).
+   2. An engine that "decorates" that route with Shopify items (API) and Google Pins (API).
+   3. A Push Notification Simulator that triggers when the "Path Context" matches a "Merchant Node."
+
+This is a first-of-its-kind sales channel because it makes commerce a byproduct of travel.
+Does this clear up the "Architecture" vs. "Catalog" confusion? Should we define the specific "Triggers" (e.g., time of day, battery level, previous stops) that your ACR would use to decide when to show a recommendation?
+
