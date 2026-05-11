@@ -716,12 +716,19 @@ function urgencyScore(node: { type: string; rating: number | null; openNow: bool
   return s;
 }
 
+// Ontario city centres for multi-city Places search
+const ONTARIO_CITIES = [
+  { name: "Toronto",  lat: 43.6532, lng: -79.3832, radius: 20_000 },
+  { name: "Ottawa",   lat: 45.4215, lng: -75.6972, radius: 20_000 },
+  { name: "Hamilton", lat: 43.2557, lng: -79.8711, radius: 15_000 },
+  { name: "London",   lat: 42.9849, lng: -81.2453, radius: 15_000 },
+  { name: "Niagara",  lat: 43.2553, lng: -79.0725, radius:  8_000 },
+];
+const PLACES_SEARCH_TYPES = ["restaurant", "cafe", "bakery", "store"];
+
 router.get("/places-graph", async (req, res) => {
-  const CENTER_LAT = 43.2552;
-  const CENTER_LNG = -79.0725;
-  const RADIUS = 700;
-  const PROX_THRESHOLD_M = 320;
-  const SKIP_TYPES = new Set(["lodging", "pharmacy", "drugstore", "gas_station", "hospital", "bank", "atm", "political", "locality"]);
+  const PROX_THRESHOLD_M = 800; // wider for cross-city — edges are affinity not pure walk proximity
+  const SKIP_TYPES = new Set(["lodging", "pharmacy", "drugstore", "gas_station", "hospital", "bank", "atm", "political", "locality", "transit_station", "subway_station"]);
 
   // Fallback: build graph from MOCK_MERCHANTS without Places API
   const buildMockGraph = () => {
@@ -763,38 +770,44 @@ router.get("/places-graph", async (req, res) => {
   }
 
   try {
-    // Parallel multi-type search
-    const searchTypes = ["cafe", "bakery", "store", "restaurant"];
-    const rawResults = await Promise.all(
-      searchTypes.map(async (t) => {
-        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${CENTER_LAT},${CENTER_LNG}&radius=${RADIUS}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`;
-        const r = await fetch(url);
-        const d = (await r.json()) as { status: string; results?: PlacesResult[] };
-        return d.results ?? [];
+    // Ontario multi-city parallel search: 5 cities × 4 types = 20 calls
+    const searchCalls = ONTARIO_CITIES.flatMap((city) =>
+      PLACES_SEARCH_TYPES.map(async (t) => {
+        const url =
+          `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
+          `?location=${city.lat},${city.lng}&radius=${city.radius}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`;
+        try {
+          const r = await fetch(url);
+          const d = (await r.json()) as { status: string; results?: PlacesResult[] };
+          return (d.results ?? []).map((p) => ({ ...p, _city: city.name }));
+        } catch { return []; }
       })
     );
+    const rawBatches = await Promise.all(searchCalls);
 
-    // Deduplicate by place_id and filter out non-commerce places
+    // Deduplicate by place_id, filter non-commerce types
     const seen = new Set<string>();
-    const places: PlacesResult[] = [];
-    for (const batch of rawResults) {
+    const places: (PlacesResult & { _city: string })[] = [];
+    for (const batch of rawBatches) {
       for (const p of batch) {
         if (seen.has(p.place_id)) continue;
         if (p.types.some((t) => SKIP_TYPES.has(t))) continue;
-        // Must have a name and be within radius
-        const dist = haversineMetre(CENTER_LAT, CENTER_LNG, p.geometry.location.lat, p.geometry.location.lng);
-        if (dist > RADIUS) continue;
         seen.add(p.place_id);
-        places.push(p);
+        places.push(p as PlacesResult & { _city: string });
       }
     }
 
-    // Get Place Details (website) for top 14 by rating
-    const topPlaces = places
-      .filter((p) => (p.user_ratings_total ?? 0) >= 5)
-      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-      .slice(0, 14);
+    // Quality score: rating × log(reviews+1) — favours popular AND well-rated
+    const qualityScore = (p: PlacesResult) =>
+      (p.rating ?? 3.5) * Math.log((p.user_ratings_total ?? 0) + 1);
 
+    // Take top 50 across all Ontario cities
+    const topPlaces = places
+      .filter((p) => (p.user_ratings_total ?? 0) >= 10)
+      .sort((a, b) => qualityScore(b) - qualityScore(a))
+      .slice(0, 50);
+
+    // Place Details (website) in parallel for Shopify detection
     const detailsMap = new Map<string, { website?: string }>();
     await Promise.all(
       topPlaces.map(async (p) => {
@@ -807,20 +820,19 @@ router.get("/places-graph", async (req, res) => {
       })
     );
 
-    // Build nodes with Shopify status
+    // Build nodes
     const nodes = topPlaces.map((p) => {
       const website = detailsMap.get(p.place_id)?.website ?? null;
       const type = googleTypesToMerchantType(p.types);
-
-      // Shopify detection: name match against our verified merchants
       const shopifyMatch = MOCK_MERCHANTS.find((m) => nameMatch(m.name, p.name) && m.isOnShopify !== false);
       const websiteIsShopify = website ? (website.includes("myshopify.com") || website.includes("shopify")) : false;
-      const shopifyStatus: "verified" | "ghost" | "unknown" = shopifyMatch || websiteIsShopify ? "verified" : "ghost";
-
+      const shopifyStatus: "verified" | "ghost" | "unknown" =
+        shopifyMatch || websiteIsShopify ? "verified" : "ghost";
       return {
         placeId: p.place_id,
         name: p.name,
         type,
+        city: (p as PlacesResult & { _city: string })._city,
         lat: p.geometry.location.lat,
         lng: p.geometry.location.lng,
         rating: p.rating ?? null,
@@ -834,31 +846,132 @@ router.get("/places-graph", async (req, res) => {
       };
     });
 
-    // Build edges: proximity × type affinity
+    // Edges: pure type-affinity (no proximity filter — nodes span all Ontario)
     const edges: Array<{ sourceId: string; targetId: string; score: number; proximityM: number; affinityReason: string }> = [];
     for (let i = 0; i < nodes.length; i++) {
       for (let j = i + 1; j < nodes.length; j++) {
         const a = nodes[i], b = nodes[j];
         const dist = haversineMetre(a.lat, a.lng, b.lat, b.lng);
-        if (dist > PROX_THRESHOLD_M * 1.5) continue; // skip very distant pairs
-        const proxScore = Math.max(0, 1 - dist / PROX_THRESHOLD_M);
-        const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.3;
-        const score = Math.round((0.45 * affinity + 0.55 * proxScore) * 100) / 100;
-        if (score >= 0.3) {
-          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}` });
+        const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.2;
+        // Same-city proximity bonus
+        const sameCity = a.city === b.city;
+        const proxBonus = sameCity ? Math.max(0, 1 - dist / PROX_THRESHOLD_M) * 0.3 : 0;
+        const score = Math.round((affinity * 0.7 + proxBonus) * 100) / 100;
+        if (score >= 0.35) {
+          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}${sameCity ? ` · ${a.city}` : ""}` });
         }
       }
     }
 
-    // Commerce route: urgency-scored walk order
     const commerceRoute = [...nodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
 
-    req.log.info({ nodes: nodes.length, edges: edges.length, verified: nodes.filter(n => n.shopifyStatus === "verified").length, ghost: nodes.filter(n => n.shopifyStatus === "ghost").length }, "places-graph computed");
+    req.log.info({
+      nodes: nodes.length, edges: edges.length,
+      verified: nodes.filter(n => n.shopifyStatus === "verified").length,
+      ghost: nodes.filter(n => n.shopifyStatus === "ghost").length,
+      cities: [...new Set(nodes.map(n => n.city))],
+    }, "places-graph computed (Ontario multi-city)");
+
     res.json({ nodes, edges, commerceRoute, source: "google" });
 
   } catch (err) {
     req.log.warn({ err }, "places-graph: Google Places failed, falling back to mock");
     res.json(buildMockGraph());
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/mockshop-catalog
+// Returns raw Mock.shop product data so the UI can show what Shopify inventory
+// looks like for each merchant type. Fetches real collections + products.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MOCKSHOP_COLLECTIONS = ["featured", "tops", "accessories", "shoes", "women", "unisex"];
+
+router.get("/mockshop-catalog", async (_req, res) => {
+  const query = `{
+    ${MOCKSHOP_COLLECTIONS.map((handle) => `
+      ${handle}: collection(handle: "${handle}") {
+        title
+        products(first: 6) {
+          edges {
+            node {
+              title
+              handle
+              productType
+              tags
+              priceRange {
+                minVariantPrice { amount currencyCode }
+                maxVariantPrice { amount currencyCode }
+              }
+              featuredImage { url }
+            }
+          }
+        }
+      }
+    `).join("\n")}
+  }`;
+
+  try {
+    const r = await fetch(MOCK_SHOP_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query }),
+    });
+    const raw = (await r.json()) as {
+      data?: Record<string, {
+        title: string;
+        products: {
+          edges: Array<{
+            node: {
+              title: string;
+              handle: string;
+              productType: string;
+              tags: string[];
+              priceRange: {
+                minVariantPrice: { amount: string; currencyCode: string };
+                maxVariantPrice: { amount: string; currencyCode: string };
+              };
+              featuredImage: { url: string } | null;
+            };
+          }>;
+        };
+      }>;
+    };
+
+    const collections = Object.entries(raw.data ?? {}).map(([handle, col]) => ({
+      handle,
+      title: col.title,
+      products: col.products.edges.map((e) => ({
+        title: e.node.title,
+        handle: e.node.handle,
+        productType: e.node.productType,
+        tags: e.node.tags,
+        minPrice: parseFloat(e.node.priceRange.minVariantPrice.amount),
+        maxPrice: parseFloat(e.node.priceRange.maxVariantPrice.amount),
+        currency: e.node.priceRange.minVariantPrice.currencyCode,
+        imageUrl: e.node.featuredImage?.url ?? null,
+      })),
+    }));
+
+    // Summary: unique product types and tags across all
+    const allTags = new Set<string>();
+    const allTypes = new Set<string>();
+    collections.forEach((c) => c.products.forEach((p) => {
+      p.tags.forEach((t) => allTags.add(t));
+      if (p.productType) allTypes.add(p.productType);
+    }));
+
+    res.json({
+      source: "mock.shop",
+      collectionsCount: collections.length,
+      totalProducts: collections.reduce((s, c) => s + c.products.length, 0),
+      collections,
+      allProductTypes: [...allTypes].slice(0, 30),
+      sampleTags: [...allTags].slice(0, 40),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch Mock.shop catalog", detail: String(err) });
   }
 });
 
