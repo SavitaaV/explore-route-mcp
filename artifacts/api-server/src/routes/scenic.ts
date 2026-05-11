@@ -657,6 +657,211 @@ router.get("/merchant-graph", async (req, res) => {
   res.json({ nodes, edges });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/places-graph
+// Commerce graph powered by Google Places Nearby Search.
+// Nodes = real businesses in NOTL Old Town (Google Places).
+// Edges = proximity (<300 m walk) × co-visit affinity (type pair score).
+// Each node is tagged: shopifyStatus "verified" | "ghost" | "unknown".
+// Includes a commerceRoute: suggested walk order (time-sensitive first → rating → cluster).
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface PlacesResult {
+  place_id: string;
+  name: string;
+  types: string[];
+  geometry: { location: { lat: number; lng: number } };
+  rating?: number;
+  user_ratings_total?: number;
+  opening_hours?: { open_now?: boolean };
+  vicinity?: string;
+}
+
+// Map Google Places type arrays → our merchant type
+function googleTypesToMerchantType(types: string[]): string {
+  if (types.includes("bar") || types.includes("liquor_store")) return "winery";
+  if (types.includes("bakery") || types.includes("meal_takeaway")) return "bakery";
+  if (types.includes("cafe") || types.includes("coffee_shop")) return "cafe";
+  if (types.includes("restaurant") || types.includes("food")) return "restaurant";
+  if (types.includes("clothing_store") || types.includes("shoe_store")) return "boutique";
+  if (types.includes("grocery_or_supermarket") || types.includes("supermarket")) return "artisan";
+  if (types.includes("store") || types.includes("point_of_interest")) return "artisan";
+  return "boutique";
+}
+
+// Haversine distance in metres
+function haversineMetre(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Fuzzy name match (normalise → check containment)
+function nameMatch(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const na = norm(a);
+  const nb = norm(b);
+  return na.includes(nb) || nb.includes(na);
+}
+
+// Commerce urgency score for route ordering
+function urgencyScore(node: { type: string; rating: number | null; openNow: boolean | null }): number {
+  let s = node.rating ?? 4.0;
+  if (node.type === "bakery") s += 3;        // sell-out risk
+  if (node.type === "cafe") s += 1;          // good early/mid walk
+  if (node.type === "winery") s -= 0.5;      // best saved for end
+  if (node.openNow === false) s -= 5;        // closed = deprioritise
+  return s;
+}
+
+router.get("/places-graph", async (req, res) => {
+  const CENTER_LAT = 43.2552;
+  const CENTER_LNG = -79.0725;
+  const RADIUS = 700;
+  const PROX_THRESHOLD_M = 320;
+  const SKIP_TYPES = new Set(["lodging", "pharmacy", "drugstore", "gas_station", "hospital", "bank", "atm", "political", "locality"]);
+
+  // Fallback: build graph from MOCK_MERCHANTS without Places API
+  const buildMockGraph = () => {
+    const nodes = MOCK_MERCHANTS.map((m) => ({
+      placeId: m.id,
+      name: m.name,
+      type: m.type,
+      lat: m.lat,
+      lng: m.lng,
+      rating: m.rating,
+      userRatingsTotal: m.recentVisitors ?? 0,
+      openNow: m.isOpen ?? true,
+      vicinity: m.address,
+      shopifyStatus: (m.isOnShopify === false ? "ghost" : "verified") as "verified" | "ghost" | "unknown",
+      shopifyMerchantId: m.isOnShopify !== false ? m.id : null,
+      website: null as string | null,
+      source: "mock" as const,
+    }));
+    const edges: Array<{ sourceId: string; targetId: string; score: number; proximityM: number; affinityReason: string }> = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dist = haversineMetre(a.lat, a.lng, b.lat, b.lng);
+        const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.3;
+        const proxScore = Math.max(0, 1 - dist / PROX_THRESHOLD_M);
+        const score = Math.round((0.5 * affinity + 0.5 * proxScore) * 100) / 100;
+        if (score >= 0.2) {
+          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}` });
+        }
+      }
+    }
+    const commerceRoute = [...nodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
+    return { nodes, edges, commerceRoute, source: "mock" };
+  };
+
+  if (!GOOGLE_MAPS_API_KEY) {
+    res.json(buildMockGraph());
+    return;
+  }
+
+  try {
+    // Parallel multi-type search
+    const searchTypes = ["cafe", "bakery", "store", "restaurant"];
+    const rawResults = await Promise.all(
+      searchTypes.map(async (t) => {
+        const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${CENTER_LAT},${CENTER_LNG}&radius=${RADIUS}&type=${t}&key=${GOOGLE_MAPS_API_KEY}`;
+        const r = await fetch(url);
+        const d = (await r.json()) as { status: string; results?: PlacesResult[] };
+        return d.results ?? [];
+      })
+    );
+
+    // Deduplicate by place_id and filter out non-commerce places
+    const seen = new Set<string>();
+    const places: PlacesResult[] = [];
+    for (const batch of rawResults) {
+      for (const p of batch) {
+        if (seen.has(p.place_id)) continue;
+        if (p.types.some((t) => SKIP_TYPES.has(t))) continue;
+        // Must have a name and be within radius
+        const dist = haversineMetre(CENTER_LAT, CENTER_LNG, p.geometry.location.lat, p.geometry.location.lng);
+        if (dist > RADIUS) continue;
+        seen.add(p.place_id);
+        places.push(p);
+      }
+    }
+
+    // Get Place Details (website) for top 14 by rating
+    const topPlaces = places
+      .filter((p) => (p.user_ratings_total ?? 0) >= 5)
+      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+      .slice(0, 14);
+
+    const detailsMap = new Map<string, { website?: string }>();
+    await Promise.all(
+      topPlaces.map(async (p) => {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website&key=${GOOGLE_MAPS_API_KEY}`;
+          const r = await fetch(url);
+          const d = (await r.json()) as { result?: { website?: string } };
+          if (d.result) detailsMap.set(p.place_id, d.result);
+        } catch { /* skip */ }
+      })
+    );
+
+    // Build nodes with Shopify status
+    const nodes = topPlaces.map((p) => {
+      const website = detailsMap.get(p.place_id)?.website ?? null;
+      const type = googleTypesToMerchantType(p.types);
+
+      // Shopify detection: name match against our verified merchants
+      const shopifyMatch = MOCK_MERCHANTS.find((m) => nameMatch(m.name, p.name) && m.isOnShopify !== false);
+      const websiteIsShopify = website ? (website.includes("myshopify.com") || website.includes("shopify")) : false;
+      const shopifyStatus: "verified" | "ghost" | "unknown" = shopifyMatch || websiteIsShopify ? "verified" : "ghost";
+
+      return {
+        placeId: p.place_id,
+        name: p.name,
+        type,
+        lat: p.geometry.location.lat,
+        lng: p.geometry.location.lng,
+        rating: p.rating ?? null,
+        userRatingsTotal: p.user_ratings_total ?? 0,
+        openNow: p.opening_hours?.open_now ?? null,
+        vicinity: p.vicinity ?? "",
+        shopifyStatus,
+        shopifyMerchantId: shopifyMatch?.id ?? null,
+        website,
+        source: "google" as const,
+      };
+    });
+
+    // Build edges: proximity × type affinity
+    const edges: Array<{ sourceId: string; targetId: string; score: number; proximityM: number; affinityReason: string }> = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dist = haversineMetre(a.lat, a.lng, b.lat, b.lng);
+        if (dist > PROX_THRESHOLD_M * 1.5) continue; // skip very distant pairs
+        const proxScore = Math.max(0, 1 - dist / PROX_THRESHOLD_M);
+        const affinity = TYPE_AFFINITY[a.type]?.[b.type] ?? 0.3;
+        const score = Math.round((0.45 * affinity + 0.55 * proxScore) * 100) / 100;
+        if (score >= 0.3) {
+          edges.push({ sourceId: a.placeId, targetId: b.placeId, score, proximityM: Math.round(dist), affinityReason: `${a.type} × ${b.type}` });
+        }
+      }
+    }
+
+    // Commerce route: urgency-scored walk order
+    const commerceRoute = [...nodes].sort((a, b) => urgencyScore(b) - urgencyScore(a)).map((n) => n.placeId);
+
+    req.log.info({ nodes: nodes.length, edges: edges.length, verified: nodes.filter(n => n.shopifyStatus === "verified").length, ghost: nodes.filter(n => n.shopifyStatus === "ghost").length }, "places-graph computed");
+    res.json({ nodes, edges, commerceRoute, source: "google" });
+
+  } catch (err) {
+    req.log.warn({ err }, "places-graph: Google Places failed, falling back to mock");
+    res.json(buildMockGraph());
+  }
+});
+
 // GET /api/mcp-tools
 router.get("/mcp-tools", (_req, res) => {
   res.json([
