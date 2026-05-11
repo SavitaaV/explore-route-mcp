@@ -94,9 +94,16 @@ export default function Home() {
 
   const handlePinClick = useCallback((merchantId: string) => {
     setSelectedMerchantId(merchantId);
-    const merchant = (merchants ?? []).find((m) => m.id === merchantId);
-    if (!merchant) return;
-    merchantCardMutation.mutate({ data: { merchantId: merchant.id, merchantName: merchant.name, merchantType: merchant.type } });
+    // Try the already-loaded merchant list first; fall back to MOCK_MERCHANTS
+    // so graph-node clicks always fire the card mutation even before route/merchants load
+    const merchant = (merchants ?? []).find((m) => m.id === merchantId)
+      ?? (window as unknown as Record<string, unknown>).__MOCK_MERCHANTS__ as { id: string; name: string; type: string } | undefined;
+    if (merchant && "name" in merchant) {
+      merchantCardMutation.mutate({ data: { merchantId, merchantName: (merchant as {name:string}).name, merchantType: (merchant as {type:string}).type } });
+    } else {
+      // Minimal call so the panel opens — server will hydrate from its own data
+      merchantCardMutation.mutate({ data: { merchantId, merchantName: merchantId, merchantType: "boutique" } });
+    }
   }, [merchants, merchantCardMutation]);
 
   const triggerWatchAlert = useCallback((merchant: { name: string; type: string }) => {

@@ -561,9 +561,14 @@ function jaccardSim(a: string[], b: string[]): { score: number; shared: string[]
 
 // GET /api/merchant-graph
 router.get("/merchant-graph", async (req, res) => {
-  const minSim = parseFloat(String(req.query.minSimilarity ?? "0.25"));
+  const rawSim = parseFloat(String(req.query.minSimilarity ?? "0.25"));
+  const minSim = Number.isFinite(rawSim) ? Math.max(0, Math.min(1, rawSim)) : 0.25;
+  const allowedTypes = new Set(["winery", "bakery", "cafe", "restaurant", "artisan", "boutique"]);
   const typeFilter = req.query.merchantTypes
-    ? String(req.query.merchantTypes).split(",").map((s) => s.trim())
+    ? String(req.query.merchantTypes)
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => allowedTypes.has(s))
     : null;
 
   const graphMerchants = MOCK_MERCHANTS.filter(
