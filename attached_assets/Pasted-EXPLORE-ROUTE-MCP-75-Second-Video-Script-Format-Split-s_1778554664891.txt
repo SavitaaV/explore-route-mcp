@@ -1,0 +1,167 @@
+EXPLORE ROUTE MCP — 75 Second Video Script
+Format: Split screen throughout. Left = mobile phone showing Google Maps + Google Watch. Right = mobile phone showing Claude agent chat.
+
+FRAME 1 — 0:00 to 0:05
+SCREEN:
+Black screen. White text fades in centred:
+"Every great local merchant has the same problem."
+CAPTION: Every great local merchant has the same problem.
+AUDIO: "Every great local merchant has the same problem."
+
+FRAME 2 — 0:05 to 0:08
+SCREEN:
+Google Maps shown. Route from Toronto to Niagara-on-the-Lake along the Niagara Parkway. Clean scenic route highlighted in green. No merchant pins visible anywhere.
+CAPTION: Nobody finds them.
+AUDIO: "Nobody finds them."
+
+FRAME 3 — 0:08 to 0:12
+SCREEN:
+Split screen activates. Left side: mobile phone frame with Google Maps showing the Niagara Parkway route. Google Watch below it — blank screen. Right side: mobile phone frame showing Claude agent chat. User types:
+"I'm driving the Niagara Parkway to NOTL this weekend. Anything worth stopping for?"
+CAPTION: User asks Claude for scenic route suggestions.
+AUDIO: "Meet Priya. She's driving the Niagara Parkway to Niagara-on-the-Lake this weekend and asks Claude what's worth stopping for."
+
+FRAME 4 — 0:12 to 0:17
+SCREEN:
+Right side — Claude responds in chat:
+"I can help with that. To give you the best suggestions along your exact route, can I enable Explore Route MCP? It connects to Shopify merchants and local businesses along your path — so I can surface the right stops at the right time, not just generic results. I'll only recommend when it's genuinely worth a detour. You can turn it off anytime."
+CAPTION: Claude asks permission to enable Explore Route MCP.
+AUDIO: "Claude asks permission to activate Explore Route MCP — a spatial commerce layer that surfaces local merchants based on exactly where she's heading, not what she searched for."
+
+FRAME 5 — 0:17 to 0:20
+SCREEN:
+Right side — Priya taps "Enable" button in chat.
+Left side — Google Maps immediately shows two merchant pins appear along the Niagara Parkway route. One orange pin (Shopify merchant). One grey pin (non-Shopify merchant). The route is now annotated.
+CAPTION: Explore Route MCP connects. Merchants surface along her exact path.
+AUDIO: "She enables it. The MCP queries Shopify's Global Catalog and Google Places simultaneously. Two merchants appear along her route."
+
+FRAME 6 — 0:20 to 0:30 — JOURNEY 1: WICK'D WAX
+SCREEN:
+Right side — Claude sends a merchant card in chat:
+🕯 Wick'd Wax ~ The Candle Shoppe
+Shopify merchant · St. Davids, ON
+━━━━━━━━━━━━━━━━━━
+Seasonal Harvest Collection — Soy candles
+Inventory confidence: 94% ✓ verified today
+Detour: 3 minutes off your route
+⭐ 4.9 · 127 reviews
+━━━━━━━━━━━━━━━━━━
+[Add to Route]  [Pre-order via Shopify →]
+Left side — orange merchant pin on map pulses. Google Watch buzzes. Watch screen shows:
+🕯 Wick'd Wax
+Seasonal Harvest candle
+3 min detour · 94% in stock
+[Skip]  [Stop Here →]
+CAPTION: Shopify merchant surfaced. Pre-order available. Watch notifies Priya.
+AUDIO: "First stop: Wick'd Wax, a Shopify candle merchant 3 minutes off route. Inventory is live. Priya can pre-order before she arrives."
+
+FRAME 7 — 0:30 to 0:35
+SCREEN:
+Right side — Priya taps "Pre-order via Shopify." Shopify Universal Cart opens inline in chat. One tap. Order confirmed. Claude responds:
+"Done. Your Seasonal Harvest candle is reserved. Pick up when you arrive — they'll have it ready."
+Left side — Merchant dashboard notification pops up on a second small window overlay on the left phone:
+📦 New Order — Explore Route
+Priya M. · Arriving in ~18 min
+Seasonal Harvest Soy Candle x1
+CAPTION: One tap. Pre-order confirmed. Merchant notified in real time.
+AUDIO: "One tap. Pre-order confirmed through Shopify's Universal Cart. Wick'd Wax gets notified instantly. High-intent buyer, en route, guaranteed sale."
+
+FRAME 8 — 0:35 to 0:45 — JOURNEY 2: LAKESIDE POTTERY
+SCREEN:
+Right side — Claude sends a second merchant card:
+🏺 Lakeside Pottery
+Ron & Barb Zimmermann · Since 1989
+755 Lakeshore Rd, Niagara-on-the-Lake
+━━━━━━━━━━━━━━━━━━
+Handthrown stoneware · Honey pots · Mugs
+Google Places · No online store
+On your route · Open weekends
+⭐ 4.8 · 89 visitor reviews
+━━━━━━━━━━━━━━━━━━
+[Add as Stop]
+Left side — grey merchant pin on map. Google Watch buzzes gently:
+🏺 Lakeside Pottery
+Handmade stoneware since 1989
+On your route · No detour needed
+[Add Stop]
+CAPTION: Non-Shopify merchant surfaced via Google Places. No pre-order — but worth the stop.
+AUDIO: "Second stop: Lakeside Pottery. Ron and Barb have been throwing stoneware by hand since 1989. No website. No online store. Completely invisible to agentic commerce — until now."
+
+FRAME 9 — 0:45 to 0:52
+SCREEN:
+Left side — Google Maps reroutes to include Lakeside Pottery as a stop. Priya's blue navigation dot moves along the Niagara Parkway. She arrives. Geofence circle pulses on the map around 755 Lakeshore Rd.
+Right side — Claude sends a message:
+"Looks like you're at Lakeside Pottery. Hope you find something beautiful. Ron makes the honey pots himself — worth asking about."
+Google Watch shows a quiet confirmation:
+📍 Visit confirmed
+Lakeside Pottery
+CAPTION: Priya visits. Geofence confirms arrival. No transaction needed.
+AUDIO: "Priya stops, browses, buys a honey pot in cash. The MCP geofence confirms her visit — no transaction required on Shopify's side."
+
+FRAME 10 — 0:52 to 0:62
+SCREEN:
+Screen transitions to a clean dashboard view — Shopify merchant acquisition interface. Simple card:
+📊 Explore Route — Weekly Signal
+━━━━━━━━━━━━━━━━━━
+Lakeside Pottery · 755 Lakeshore Rd NOTL
+Not on Shopify
+
+This week:
+- 4 verified traveller visits via Explore Route
+- Estimated missed online revenue: $340
+- Google Places rating: 4.8 ⭐
+
+→ Send merchant outreach
+CAPTION: Explore Route signals Shopify. 4 verified visits this week. Proof of demand before the ask.
+AUDIO: "Behind the scenes, Explore Route logs every verified visit. After four this week, Shopify's acquisition team gets a warm lead — not a cold email, but proof of demand with a dollar figure attached."
+
+FRAME 11 — 0:62 to 0:68
+SCREEN:
+Split screen returns. Left side shows both merchant pins on the Niagara Parkway — one orange (Shopify, connected), one now glowing green (non-Shopify, visited, signal sent). Right side shows the two merchant cards side by side in the chat.
+Simple animated arrows connect the two sides.
+CAPTION: Two merchants. Two outcomes. One journey.
+AUDIO: "Two merchants. Two outcomes. Wick'd Wax gets a guaranteed pre-order. Lakeside Pottery gets visibility and a path to Shopify — on their own terms."
+
+FRAME 12 — 0:68 to 0:75
+SCREEN:
+Clean black screen. Two lines appear:
+"For buyers: the right product, at the right moment, without asking."
+"For merchants: discovery that doesn't require an ad budget."
+Then the project name fades in:
+EXPLORE ROUTE MCP
+Spatial Commerce · Built on Shopify's MCP Infrastructure
+CAPTION: For buyers: right product, right moment. For merchants: discovery without ad spend.
+AUDIO: "Explore Route MCP. Because the best merchants deserve to be found — and the best buyers deserve to find them."
+
+PRODUCTION NOTES FOR REPLIT
+Here is exactly what needs to be visible on screen for each frame. Build or confirm these exist in your Replit prototype before recording:
+Left phone — Google Maps side:
+
+Niagara Parkway route from Toronto to NOTL in green
+Two merchant pins (orange for Shopify, grey for non-Shopify, turns green after visit)
+Geofence pulse animation on arrival
+Navigation dot moving along route
+
+Left phone — Google Watch below it:
+
+Two notification cards (one per merchant)
+Skip / Stop Here buttons
+Visit confirmed message
+
+Right phone — Claude agent side:
+
+Opening user message
+Claude permission request with Enable button
+Two merchant cards (formatted as above)
+Pre-order confirmation flow
+Post-visit message
+
+Dashboard transition (Frame 10):
+
+Simple clean card showing weekly signal data
+Can be a separate screen recording moment — pause the split screen, show this full width for 8 seconds, then return
+
+
+VOICEOVER PRODUCTION NOTES
+Since Replit is generating the voice, keep every sentence under 12 words. Short declarative sentences read better through TTS. The script above is written for this — do not add words between the sentences I've written.
+Total word count for audio: approximately 195 words across 75 seconds. That's 2.6 words per second — comfortable TTS pace.
