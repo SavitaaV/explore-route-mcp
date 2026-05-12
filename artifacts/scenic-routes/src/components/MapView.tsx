@@ -407,12 +407,15 @@ function GoogleMapComponent({
             ${m.operatingSeason ? `<p style="margin:0 0 4px;font-size:11px;color:#7c3aed;font-weight:600">📅 ${m.operatingSeason}</p>` : ""}
             ${upcomingLabels ? `<p style="margin:0;font-size:11px;color:#6b7280">Next: ${upcomingLabels}</p>` : ""}
           </div>`;
-        marker.addListener("click", () => {
+        const openInfo = () => {
           if (infoWindowRef.current && mapInstanceRef.current) {
             infoWindowRef.current.setContent(infoContent);
             infoWindowRef.current.open(mapInstanceRef.current, marker);
           }
-        });
+        };
+        marker.addListener("click", openInfo);
+        marker.addListener("mouseover", openInfo);
+        marker.addListener("mouseout", () => infoWindowRef.current?.close());
       }
 
       discoveryMarkersRef.current.push(marker);
