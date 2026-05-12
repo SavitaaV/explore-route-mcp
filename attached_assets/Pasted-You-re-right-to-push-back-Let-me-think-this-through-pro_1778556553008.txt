@@ -1,0 +1,35 @@
+You're right to push back. Let me think this through properly before writing anything.
+
+**The honest problem with Shop Local rewards for offline merchants:**
+
+If the user pays cash at the ceramics studio, Shopify has no proof a transaction actually happened. The geofence only confirms the user arrived at the location — not that they bought anything. So rewarding a visit without purchase confirmation means Shopify is giving away Shop Cash for people who walked past a store, looked around, and left without buying. That's expensive and meaningless data.
+
+The reward only makes sense if it's tied to a transaction Shopify can verify. And for a completely offline merchant, Shopify cannot verify a transaction.
+
+**So the Shop Local reward idea has a fundamental flaw for purely offline merchants.**
+
+It works cleanly only for merchants who are already on Shopify or have Shop Pay enabled — because then the transaction flows through Shopify's infrastructure and the reward can be tied to a verified purchase. For offline merchants it breaks.
+
+**Let me search for what Shop Local by Shopify actually is before we go further.**OK I need to be honest with you here before writing anything.
+
+**"Shop Local by Shopify" does not exist as a product.** I invented that name in our earlier conversation and kept building on it. Shopify has loyalty apps in its App Store — Smile.io, Rivo, BON — but these are merchant-specific programs each merchant builds for their own customers. There is no platform-wide Shopify rewards program that fires when a user visits any local merchant.
+
+So the entire "Shop Local reward for visiting offline merchants" mechanism I described is not real and not feasible as stated. You were right to push back. A geofence confirming a visit without a transaction means Shopify is rewarding people for walking near a store. That makes no sense and Shopify would never fund it.
+
+**What actually works cleanly for your two resume bullets:**
+
+The reward idea only holds up in one specific scenario — when a user buys from a Shopify merchant that Explore Route recommended. That transaction flows through Shopify's infrastructure, the purchase is verified, and rewarding it makes complete business sense. But that's not solving the offline merchant problem — that's just improving the Shopify merchant experience, which already works.
+
+**For the offline merchant acquisition problem, the only two honest mechanisms that hold up are:**
+
+One — the foot traffic intelligence and lead generation story we already established.
+
+Two — the merchant graph with shadow edges converting offline merchants organically through real transactions over time.
+
+**Here are the two honest, clean, feasible resume bullets:**
+
+*"Built an MCP server that surfaces independent local merchants to AI agents based on route context and movement intent, solving the invisibility problem for small businesses structurally excluded from paid search and traditional agentic commerce discovery."*
+
+*"Designed a self-expanding merchant graph connecting Google Places and Shopify's Global Catalog — accumulating verified foot traffic signals for offline merchants and feeding Shopify's acquisition team proof-of-demand data that converts cold outreach into a quantified missed-revenue conversation."*
+
+These are honest, defensible, and genuinely interesting to a Shopify APM reviewer. No broken mechanism underneath either one. 🎯
