@@ -134,6 +134,51 @@ function ConfidenceBadge({ score, visitors, hoursAgo }: { score: number; visitor
   );
 }
 
+// ── Shared ProductTile — used by DiscoveryMerchantRow and any merchant card expansion ──
+function ProductTile({ product }: { product: DiscoveryProduct }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 8,
+      background: "#fff", borderRadius: 10, padding: "6px 8px",
+      border: "1px solid #e5e7eb",
+    }}>
+      {product.imageUrl ? (
+        <img
+          src={product.imageUrl}
+          alt={product.title}
+          style={{ width: 36, height: 36, borderRadius: 7, objectFit: "cover", flexShrink: 0 }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      ) : (
+        <div style={{ width: 36, height: 36, borderRadius: 7, background: "#f3f4f6", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <ShoppingBag style={{ width: 14, height: 14, color: "#9ca3af" }} />
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {product.title}
+        </p>
+        <p style={{ margin: "1px 0 0", fontSize: 10, color: "#059669", fontWeight: 700 }}>{product.price}</p>
+      </div>
+      <a
+        href={product.checkoutUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          padding: "5px 9px", borderRadius: 8,
+          background: "linear-gradient(135deg, #059669, #34d399)",
+          color: "#fff", fontSize: 9, fontWeight: 700,
+          textDecoration: "none", flexShrink: 0,
+          display: "flex", alignItems: "center", gap: 3,
+        }}
+      >
+        <ShoppingBag style={{ width: 8, height: 8 }} /> Buy
+      </a>
+    </div>
+  );
+}
+
 function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id: string) => void }) {
   return (
     <div
@@ -377,42 +422,9 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
             /* Error state */
             <p style={{ paddingTop: 8, fontSize: 10, color: "#dc2626", margin: 0 }}>{fetchError}</p>
           ) : products && products.length > 0 ? (
-            /* Product tiles */
+            /* Product tiles — shared ProductTile component */
             <div style={{ paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-              {products.map((p) => (
-                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 10, padding: "6px 8px", border: "1px solid #e5e7eb" }}>
-                  {p.imageUrl ? (
-                    <img
-                      src={p.imageUrl} alt={p.title}
-                      style={{ width: 36, height: 36, borderRadius: 7, objectFit: "cover", flexShrink: 0 }}
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                    />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: 7, background: "#f3f4f6", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <ShoppingBag style={{ width: 14, height: 14, color: "#9ca3af" }} />
-                    </div>
-                  )}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</p>
-                    <p style={{ margin: "1px 0 0", fontSize: 10, color: "#059669", fontWeight: 700 }}>{p.price}</p>
-                  </div>
-                  <a
-                    href={p.checkoutUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      padding: "5px 9px", borderRadius: 8,
-                      background: "linear-gradient(135deg, #059669, #34d399)",
-                      color: "#fff", fontSize: 9, fontWeight: 700,
-                      textDecoration: "none", flexShrink: 0,
-                      display: "flex", alignItems: "center", gap: 3,
-                    }}
-                  >
-                    <ShoppingBag style={{ width: 8, height: 8 }} /> Buy
-                  </a>
-                </div>
-              ))}
+              {products.map((p) => <ProductTile key={p.id} product={p} />)}
             </div>
           ) : products && products.length === 0 ? (
             <p style={{ paddingTop: 8, fontSize: 10, color: "#6b7280", margin: 0 }}>No products listed right now.</p>

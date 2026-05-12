@@ -597,7 +597,22 @@ router.post("/merchant-card", async (req, res) => {
       walkMinutes: 2,
     };
 
-    const products = getCuratedProducts(merchantType ?? "boutique");
+    // Try live Shopify Global Catalog first; fall back to curated if unavailable or no match
+    const type = merchantType ?? "boutique";
+    const catalogProducts = await searchCatalog(merchantName, { limit: 3, category: type });
+    const source: "shopify-catalog" | "curated" = catalogProducts.length > 0 ? "shopify-catalog" : "curated";
+    const products = catalogProducts.length > 0
+      ? catalogProducts.map((p: CatalogProduct) => ({
+          id: p.id ?? `cat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title: p.title,
+          price: p.minPrice != null
+            ? `$${p.minPrice.toFixed(2)} ${p.currency ?? "CAD"}`
+            : "Price on request",
+          imageUrl: p.imageUrl ?? null,
+          checkoutUrl: p.checkoutUrl ?? "https://shopify.dev/docs/agents",
+        }))
+      : getCuratedProducts(type);
+
     const checkoutUrl = products[0]?.checkoutUrl ?? "https://shopify.dev/docs/agents";
 
     res.json({
@@ -605,6 +620,7 @@ router.post("/merchant-card", async (req, res) => {
       products,
       checkoutUrl,
       hapticDistance: 0.3,
+      source,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get merchant card");
