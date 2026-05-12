@@ -551,6 +551,28 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
   );
 }
 
+type FilterKey = "all" | "events" | "coffee" | "wine" | "food" | "artisan";
+
+const FILTER_DEFS: { key: FilterKey; label: string; emoji: string }[] = [
+  { key: "all",     label: "All",     emoji: "✦"  },
+  { key: "events",  label: "Events",  emoji: "🎪" },
+  { key: "coffee",  label: "Coffee",  emoji: "☕" },
+  { key: "wine",    label: "Wine",    emoji: "🍷" },
+  { key: "food",    label: "Food",    emoji: "🥐" },
+  { key: "artisan", label: "Artisan", emoji: "🫙" },
+];
+
+function matchesFilter(m: DiscoveryMerchant, filter: FilterKey): boolean {
+  switch (filter) {
+    case "all":     return true;
+    case "events":  return m.isEvent || m.type === "farmer_market";
+    case "coffee":  return m.type === "cafe";
+    case "wine":    return m.type === "winery";
+    case "food":    return m.type === "restaurant" || m.type === "bakery";
+    case "artisan": return m.type === "artisan" || m.type === "boutique";
+  }
+}
+
 function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
   route: DiscoveryRouteData;
   isSaved: boolean;
@@ -559,9 +581,23 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
   onShare: () => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+
   const verified = route.merchants.filter((m) => m.shopifyStatus === "verified");
-  const events = route.merchants.filter((m) => m.isEvent);
-  const visibleMerchants = showAll ? route.merchants : route.merchants.slice(0, 5);
+  const events = route.merchants.filter((m) => m.isEvent || m.type === "farmer_market");
+
+  // Only show filter pills for categories that have ≥1 matching merchant
+  const availableFilters = FILTER_DEFS.filter((f) =>
+    f.key === "all" || route.merchants.some((m) => matchesFilter(m, f.key))
+  );
+
+  const filteredMerchants = route.merchants.filter((m) => matchesFilter(m, activeFilter));
+  const visibleMerchants = showAll ? filteredMerchants : filteredMerchants.slice(0, 5);
+
+  const handleFilterChange = (key: FilterKey) => {
+    setActiveFilter(key);
+    setShowAll(false);
+  };
 
   return (
     <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: 8, maxWidth: 280 }}>
@@ -613,23 +649,65 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
         </p>
       </div>
 
+      {/* Filter pill strip — only shown when there are 2+ filter options with results */}
+      {availableFilters.length > 1 && (
+        <div style={{ padding: "7px 10px 5px", borderBottom: "1px solid #f3f4f6", display: "flex", gap: 4, overflowX: "auto", scrollbarWidth: "none" }}>
+          {availableFilters.map((f) => {
+            const active = activeFilter === f.key;
+            const isEvent = f.key === "events";
+            const activeColor = isEvent ? "#7c3aed" : "#6366f1";
+            const activeBg = isEvent ? "#f5f3ff" : "#eef2ff";
+            const activeBorder = isEvent ? "#c4b5fd" : "#c7d2fe";
+            return (
+              <button
+                key={f.key}
+                onClick={() => handleFilterChange(f.key)}
+                aria-pressed={active}
+                style={{
+                  display: "flex", alignItems: "center", gap: 3,
+                  padding: "3px 8px", borderRadius: 20, flexShrink: 0,
+                  fontSize: 9, fontWeight: active ? 700 : 500,
+                  background: active ? activeBg : "transparent",
+                  color: active ? activeColor : "#6b7280",
+                  border: `1px solid ${active ? activeBorder : "#e5e7eb"}`,
+                  cursor: "pointer", transition: "all 0.12s",
+                }}
+              >
+                <span>{f.emoji}</span>
+                <span>{f.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Hint */}
       <p style={{ fontSize: 9, color: "#9ca3af", margin: 0, padding: "5px 12px 3px", fontStyle: "italic" }}>
-        Tap a stop to see products or details
+        {activeFilter === "events"
+          ? "Tap a stop to see dates and details"
+          : "Tap a stop to see products or details"}
       </p>
 
       {/* Merchant rows */}
       <div>
-        {visibleMerchants.map((m, i) => (
-          <DiscoveryMerchantRow key={m.placeId} m={m} isLast={i === visibleMerchants.length - 1 && !(!showAll && route.merchants.length > 5)} />
-        ))}
-        {route.merchants.length > 5 && (
-          <button
-            onClick={() => setShowAll((v) => !v)}
-            style={{ width: "100%", padding: "7px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", borderTop: "1px solid #f3f4f6", cursor: "pointer", fontWeight: 600 }}
-          >
-            {showAll ? "Show fewer stops ↑" : `+${route.merchants.length - 5} more stops ↓`}
-          </button>
+        {filteredMerchants.length === 0 ? (
+          <p style={{ fontSize: 10, color: "#9ca3af", padding: "8px 12px 10px", margin: 0, textAlign: "center" }}>
+            No {activeFilter} stops on this route.
+          </p>
+        ) : (
+          <>
+            {visibleMerchants.map((m, i) => (
+              <DiscoveryMerchantRow key={m.placeId} m={m} isLast={i === visibleMerchants.length - 1 && !(!showAll && filteredMerchants.length > 5)} />
+            ))}
+            {filteredMerchants.length > 5 && (
+              <button
+                onClick={() => setShowAll((v) => !v)}
+                style={{ width: "100%", padding: "7px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", borderTop: "1px solid #f3f4f6", cursor: "pointer", fontWeight: 600 }}
+              >
+                {showAll ? "Show fewer stops ↑" : `+${filteredMerchants.length - 5} more stops ↓`}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
