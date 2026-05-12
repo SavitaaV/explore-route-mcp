@@ -932,7 +932,17 @@ export function AiChat({
   userPosition, onMerchantFocus,
   onDiscoveryRequest, onDiscoveryResult, discoveryRoute, discoveryLoading,
 }: AiChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
+    return [{
+      id: "a0",
+      role: "assistant" as const,
+      content: `${greeting} Jane`,
+      timestamp: new Date(),
+      skipSources: true,
+    }];
+  });
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [milestonesFired, setMilestonesFired] = useState<Set<string>>(new Set());
