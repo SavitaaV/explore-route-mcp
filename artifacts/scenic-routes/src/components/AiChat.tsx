@@ -810,23 +810,46 @@ export function AiChat({
   // Keep the ref in sync whenever state changes
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
 
-  // On mount: create a conversation if we don't have one, so history can be persisted
+  // On mount: ensure we have a valid conversation ID.
+  // If a stored ID exists, validate it; if stale/deleted, create a fresh one.
+  // If no ID, create one immediately so the first send is always persisted.
   useEffect(() => {
-    if (conversationIdRef.current !== null) return;
     let cancelled = false;
-    fetch(`${BASE_URL}/api/anthropic/conversations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Explore" }),
-    })
-      .then((r) => r.json())
-      .then((data: { id: number }) => {
-        if (cancelled || !data?.id) return;
-        localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.id));
-        setConversationId(data.id);
-        conversationIdRef.current = data.id;
+
+    const createNew = () =>
+      fetch(`${BASE_URL}/api/anthropic/conversations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Explore" }),
       })
-      .catch(() => { /* non-fatal — falls back to stateless */ });
+        .then((r) => r.json())
+        .then((data: { id: number }) => {
+          if (cancelled || !data?.id) return;
+          localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.id));
+          setConversationId(data.id);
+          conversationIdRef.current = data.id;
+        })
+        .catch(() => { /* non-fatal — falls back to stateless */ });
+
+    const existingId = conversationIdRef.current;
+    if (existingId !== null) {
+      // Validate the stored ID — it might point to a deleted conversation
+      fetch(`${BASE_URL}/api/anthropic/conversations/${existingId}`)
+        .then((r) => {
+          if (cancelled) return;
+          if (r.status === 404) {
+            // Stale ID — clear and create a fresh conversation
+            localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+            conversationIdRef.current = null;
+            setConversationId(null);
+            void createNew();
+          }
+        })
+        .catch(() => { /* network error — keep existing id, server may be starting up */ });
+    } else {
+      void createNew();
+    }
+
     return () => { cancelled = true; };
   }, []);
   const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
@@ -1000,8 +1023,25 @@ export function AiChat({
     const narrativePrompt = `Narrate this ${route.intent} route for me — what should I know before I go?`;
 
     try {
-      const convId = conversationIdRef.current ?? 0;
-      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId}/messages`, {
+      // Ensure a conversation exists — create one lazily if mount effect hasn't finished yet
+      let convId = conversationIdRef.current;
+      if (!convId) {
+        try {
+          const r = await fetch(`${BASE_URL}/api/anthropic/conversations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "Explore" }),
+          });
+          const data = (await r.json()) as { id: number };
+          if (data?.id) {
+            localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.id));
+            setConversationId(data.id);
+            conversationIdRef.current = data.id;
+            convId = data.id;
+          }
+        } catch { /* non-fatal */ }
+      }
+      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId ?? 0}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: narrateAbortRef.current.signal,
