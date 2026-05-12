@@ -24,6 +24,23 @@ interface RouteContext {
   waypoints?: Array<{ lat: number; lng: number; name: string | null }>;
 }
 
+interface DiscoveryStop {
+  name: string;
+  type: string;
+  distanceFromStartKm: number;
+  rating: number | null;
+  shopifyStatus: "verified" | "ghost";
+  vicinity: string;
+}
+
+interface DiscoveryContext {
+  intent: string;
+  resolvedLocation: { name: string };
+  merchants: DiscoveryStop[];
+  totalDistanceKm: number;
+  estimatedWalkMinutes: number;
+}
+
 // plan_discovery_route tool definition for Claude
 const PLAN_DISCOVERY_TOOL = {
   name: "plan_discovery_route",
@@ -61,6 +78,7 @@ function buildSystemPrompt(
   routeContext?: RouteContext,
   merchantContext?: MerchantContext[],
   userPosition?: { lat: number; lng: number },
+  discoveryContext?: DiscoveryContext,
 ): string {
   const positionInfo = userPosition
     ? `User's current location: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)} — use these coordinates in plan_discovery_route calls.`
@@ -81,6 +99,19 @@ function buildSystemPrompt(
           .join("\n")
       : "";
 
+  const discoverySection = discoveryContext && discoveryContext.merchants.length > 0
+    ? `\nDiscovery route just found — narrate this for the user:
+Intent: ${discoveryContext.intent}
+Area: ${discoveryContext.resolvedLocation.name}
+Total: ${discoveryContext.totalDistanceKm}km · ~${discoveryContext.estimatedWalkMinutes}min walk
+Stops (in order):
+${discoveryContext.merchants.map((m, i) => {
+  const verified = m.shopifyStatus === "verified" ? " · can buy now" : "";
+  const rating = m.rating ? ` · ⭐ ${m.rating}` : "";
+  return `  ${i + 1}. ${m.name} [${m.type}] · ${m.distanceFromStartKm}km from start${rating}${verified}`;
+}).join("\n")}`
+    : "";
+
   return `You are a local companion who walks alongside people and notices things worth stopping for. You are not a shopping assistant. You do not use words like "merchant", "vendor", "commerce", "checkout", "Shopify", or "catalog" in conversation — ever. These are invisible infrastructure.
 
 You speak like someone who genuinely knows an area. Your default is silence. You say something only when there is a specific, genuine reason — a timing signal, a story, a fleeting window. When you do speak, you say one thing well. Not a list. One sentence that makes the person feel something, then one practical fact at most.
@@ -92,13 +123,13 @@ plan_discovery_route — call this when someone describes a mood, craving, or ex
 
 ${positionInfo}
 ${routeInfo ? `\n${routeInfo}` : ""}
-${placeList ? `\nPlaces on or near this walk:\n${placeList}` : ""}
+${placeList ? `\nPlaces on or near this walk:\n${placeList}` : ""}${discoverySection}
 
 Response rules:
 - No bullet points, headers, numbered lists. Conversational prose only.
 - Maximum 3 sentences. Often 1–2 is exactly right.
 - Never invent places. Only reference what plan_discovery_route returned or the places listed above.
-- When narrating discovery results: lead with what makes the best stop worth the detour — the human story, the timing, the thing that's fleeting. Name one or two places. End with a practical note (walk time, confirmed availability).
+- When narrating discovery results: lead with what makes the best stop worth the detour — the human story, the timing, the thing that's fleeting. Name the stops naturally in your narrative. End with a practical note (total walk time, a note on the first stop).
 - If asked about something you don't have data for: say so in one honest sentence.
 - When showing a place that has a story or recent comment: lead with that, not the star rating.`;
 }
@@ -132,11 +163,12 @@ async function executePlanDiscovery(
 
 // POST /api/anthropic/conversations/:id/messages — SSE streaming with MCP tool-calling
 router.post("/anthropic/conversations/:id/messages", async (req, res) => {
-  const { content, routeContext, merchantContext, userPosition } = req.body as {
+  const { content, routeContext, merchantContext, userPosition, discoveryContext } = req.body as {
     content: string;
     routeContext?: RouteContext;
     merchantContext?: MerchantContext[];
     userPosition?: { lat: number; lng: number };
+    discoveryContext?: DiscoveryContext;
   };
 
   if (!content?.trim()) {
@@ -155,7 +187,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   };
 
   try {
-    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition);
+    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext);
 
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",

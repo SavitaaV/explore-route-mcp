@@ -794,6 +794,8 @@ export function AiChat({
   const realLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const narrateAbortRef = useRef<AbortController | null>(null);
+  const inlineDiscoveryActiveRef = useRef(false);
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
   const prevRouteRef = useRef<RouteContext | null>(null);
   const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
@@ -956,31 +958,105 @@ export function AiChat({
     ]);
   }, []);
 
-  // Discovery route prop changed (legacy path when discoveryRoute comes from outside) → replace loading card
+  // Stream a Claude narration for the discovery route via SSE (uses own abort ref, doesn't block user input)
+  const streamDiscoveryNarration = useCallback(async (route: DiscoveryRouteData) => {
+    narrateAbortRef.current?.abort();
+    narrateAbortRef.current = new AbortController();
+
+    let narrativeMsgId: string | null = null;
+    let fullText = "";
+
+    const narrativePrompt = `Narrate this ${route.intent} route for me — what should I know before I go?`;
+
+    try {
+      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: narrateAbortRef.current.signal,
+        body: JSON.stringify({
+          content: narrativePrompt,
+          routeContext,
+          merchantContext: merchants.map((m) => ({ id: m.id, name: m.name, type: m.type, address: m.address, description: m.description, rating: m.rating, walkMinutes: m.walkMinutes })),
+          userPosition,
+          discoveryContext: route,
+        }),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let currentEventType = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEventType = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            try {
+              const rawData = JSON.parse(line.slice(6)) as Record<string, unknown>;
+              if (currentEventType === "delta" || currentEventType === "") {
+                const text = (rawData as { text?: string }).text;
+                if (text) {
+                  fullText += text;
+                  if (!narrativeMsgId) {
+                    narrativeMsgId = `dn-${Date.now()}`;
+                    const id = narrativeMsgId;
+                    setMessages((prev) => [
+                      ...prev,
+                      { id, role: "assistant" as const, content: fullText, timestamp: new Date(), streaming: true },
+                    ]);
+                  } else {
+                    const id = narrativeMsgId;
+                    setMessages((prev) => prev.map((m) => m.id === id ? { ...m, content: fullText } : m));
+                  }
+                }
+              }
+            } catch { /* ignore malformed SSE data */ }
+          } else if (line === "") {
+            currentEventType = "";
+          }
+        }
+      }
+
+      if (narrativeMsgId) {
+        const id = narrativeMsgId;
+        setMessages((prev) => prev.map((m) => m.id === id ? { ...m, streaming: false } : m));
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError" && narrativeMsgId) {
+        const id = narrativeMsgId;
+        setMessages((prev) => prev.map((m) => m.id === id ? { ...m, content: fullText || "…", streaming: false } : m));
+      }
+    }
+  }, [routeContext, merchants, userPosition]);
+
+  // Discovery route prop changed → replace loading card, then auto-stream Claude narration
+  // Skip narration when the inline sendMessage tool-call path already has a follow-up stream running
   useEffect(() => {
     if (!discoveryRoute || discoveryRoute === prevDiscoveryRef.current) return;
     prevDiscoveryRef.current = discoveryRoute;
+
+    const route = discoveryRoute;
 
     setMessages((prev) => {
       // Replace the loading card (if present) with the result card
       const idx = [...prev].reverse().findIndex((m) => m.discoveryLoadingCard);
       if (idx === -1) {
-        // No loading card — append result directly
         return [
           ...prev,
-          {
-            id: `dr-${Date.now()}`,
-            role: "assistant" as const,
-            content: `Found ${discoveryRoute.merchants.length} stops for your ${discoveryRoute.intent} route — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
-            timestamp: new Date(),
-            skipSources: true,
-          },
           {
             id: `dr-card-${Date.now()}`,
             role: "assistant" as const,
             content: "",
             timestamp: new Date(),
-            discoveryResultCard: discoveryRoute as DiscoveryRouteData,
+            discoveryResultCard: route as DiscoveryRouteData,
             skipSources: true,
           },
         ];
@@ -990,20 +1066,23 @@ export function AiChat({
       updated[realIdx] = {
         ...updated[realIdx],
         discoveryLoadingCard: undefined,
-        content: `Found ${discoveryRoute.merchants.length} stops for your ${discoveryRoute.intent} — ${discoveryRoute.merchants.filter((m) => m.shopifyStatus === "verified").length} Shopify-verified. ~${discoveryRoute.estimatedWalkMinutes} min walk.`,
+        content: "",
+        discoveryResultCard: route as DiscoveryRouteData,
         skipSources: true,
       };
-      updated.splice(realIdx + 1, 0, {
-        id: `dr-card-${Date.now()}`,
-        role: "assistant" as const,
-        content: "",
-        timestamp: new Date(),
-        discoveryResultCard: discoveryRoute as DiscoveryRouteData,
-        skipSources: true,
-      });
       return updated;
     });
-  }, [discoveryRoute]);
+
+    // Auto-stream Claude's narrative — but skip if sendMessage already produced a follow-up
+    // stream for this route (inlineDiscoveryActiveRef prevents duplicate narration)
+    if (inlineDiscoveryActiveRef.current) return;
+
+    const timer = setTimeout(() => {
+      streamDiscoveryNarration(route);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [discoveryRoute, streamDiscoveryNarration]);
 
 
 
@@ -1087,6 +1166,9 @@ export function AiChat({
                 ]);
               } else if (currentEventType === "discovery_result") {
                 // Tool executed — swap loading card with result card, update map
+                // Mark that inline discovery is active so the discoveryRoute prop useEffect
+                // skips auto-narration (the followStream below will narrate instead)
+                inlineDiscoveryActiveRef.current = true;
                 const routeData = rawData as unknown as DiscoveryRouteData;
                 setMessages((prev) => {
                   const revIdx = [...prev].reverse().findIndex((m) => m.discoveryLoadingCard);
@@ -1144,6 +1226,8 @@ export function AiChat({
       }
     } finally {
       setIsStreaming(false);
+      // Allow auto-narration again for future externally-supplied routes
+      inlineDiscoveryActiveRef.current = false;
     }
   }, [input, isStreaming, merchants, routeContext, userPosition, onDiscoveryResult, realLocation]);
 
