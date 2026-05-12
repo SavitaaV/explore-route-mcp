@@ -1014,17 +1014,6 @@ export function AiChat({
     }
   }, [messages]);
 
-  // MCP just enabled → inject confirmation
-  useEffect(() => {
-    if (!mcpEnabled) return;
-    setMessages((prev) => {
-      if (prev.some((m) => m.mcpActivated)) return prev;
-      return [
-        ...prev,
-        { id: "a1", role: "assistant", content: "Connected. Tell me what you're looking for or ask what's around you — I'll find the best stops nearby.", timestamp: new Date(), mcpActivated: true, skipSources: true },
-      ];
-    });
-  }, [mcpEnabled]);
 
   // Route context arrived (after user picked location) → inject route confirmation
   useEffect(() => {
