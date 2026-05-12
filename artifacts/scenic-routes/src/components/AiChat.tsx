@@ -1565,9 +1565,6 @@ export function AiChat({
         <div style={{ width: 34, height: 34, borderRadius: 11, background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, boxShadow: "0 2px 8px rgba(99,102,241,0.3)" }}>✦</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#111827", letterSpacing: -0.1 }}>Claude</p>
-          <p style={{ margin: 0, fontSize: 10, color: "#9ca3af" }}>
-            {mcpEnabled ? "Explore Route MCP · active" : "Explore Route MCP · Standby"}
-          </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {savedRoutes.length > 0 && (
@@ -1584,17 +1581,6 @@ export function AiChat({
               <Bookmark style={{ width: 9, height: 9, color: showSaved ? "#6366f1" : "#6b7280" }} />
               <span style={{ fontSize: 9, color: showSaved ? "#6366f1" : "#6b7280", fontWeight: 600 }}>{savedRoutes.length}</span>
             </button>
-          )}
-          {mcpEnabled ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#059669" }} className="animate-pulse" />
-              <span style={{ fontSize: 9, color: "#059669", fontWeight: 700, letterSpacing: 0.5 }}>MCP ON</span>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: "#f9fafb", border: "1px solid #e5e7eb" }}>
-              <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#d1d5db" }} />
-              <span style={{ fontSize: 9, color: "#9ca3af", fontWeight: 600, letterSpacing: 0.5 }}>STANDBY</span>
-            </div>
           )}
         </div>
       </div>
