@@ -285,3 +285,8 @@
 /* Star rating */
 .star-filled { color: hsl(var(--secondary)); }
 .star-empty  { color: hsl(var(--muted-foreground)); opacity: 0.4; }
+
+/* Spinner for loading states */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

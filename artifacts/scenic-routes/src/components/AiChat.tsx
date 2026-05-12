@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route, LocateFixed } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route, LocateFixed, ChevronDown, ChevronRight, ExternalLink, Ghost } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -47,6 +47,14 @@ interface DiscoveryRouteData {
   totalDistanceKm: number;
   estimatedWalkMinutes: number;
   source: "google" | "mock";
+}
+
+interface DiscoveryProduct {
+  id: string;
+  title: string;
+  price: string;
+  imageUrl: string | null;
+  checkoutUrl: string;
 }
 
 interface ChatMessage {
@@ -270,31 +278,166 @@ function DiscoveryLoadingCard({ intent, city }: { intent: string; city?: string 
 }
 
 // ── DiscoveryResultCard ──────────────────────────────────────────────────────
-function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
-  const [expanded, setExpanded] = useState(false);
-  const verified = route.merchants.filter((m) => m.shopifyStatus === "verified");
-  const events = route.merchants.filter((m) => m.isEvent);
 
-  function typeEmoji(type: string) {
-    switch (type) {
-      case "winery": return "🍷";
-      case "bakery": return "🥐";
-      case "cafe": return "☕";
-      case "restaurant": return "🍽️";
-      case "boutique": return "🛍️";
-      default: return "🏪";
+/** Single tappable merchant row inside DiscoveryResultCard */
+function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<DiscoveryProduct[] | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  const handleTap = async () => {
+    const next = !open;
+    setOpen(next);
+    // Only fetch products for verified merchants, and only once
+    if (next && m.shopifyStatus === "verified" && !products && !loading) {
+      setLoading(true);
+      setFetchError(null);
+      try {
+        const res = await fetch(`${BASE_URL}/api/merchant-card`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchantId: m.placeId, merchantName: m.name, merchantType: m.type }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json() as { products?: DiscoveryProduct[] };
+        setProducts(data.products ?? []);
+      } catch {
+        setFetchError("Couldn't load products right now");
+      } finally {
+        setLoading(false);
+      }
     }
-  }
+  };
 
   return (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: 8, maxWidth: 260 }}>
+    <div style={{ borderBottom: isLast ? "none" : "1px solid #f3f4f6" }}>
+      {/* Tappable row */}
+      <div
+        onClick={handleTap}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", cursor: "pointer", background: open ? "#fafafa" : "transparent", transition: "background 0.15s" }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#fafafa"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = open ? "#fafafa" : "transparent"; }}
+      >
+        <span style={{ fontSize: 13, flexShrink: 0 }}>{m.isEvent ? "🎪" : getMerchantEmoji(m.type)}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
+          <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>{m.distanceFromStartKm}km · {m.rating ? `⭐ ${m.rating}` : m.vicinity?.split(",")[0] ?? ""}</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          {m.shopifyStatus === "verified" ? (
+            <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <CheckCircle2 style={{ width: 8, height: 8, color: "#059669" }} />
+            </div>
+          ) : (
+            <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#fef3c7", border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Ghost style={{ width: 7, height: 7, color: "#d97706" }} />
+            </div>
+          )}
+          {open
+            ? <ChevronDown style={{ width: 10, height: 10, color: "#9ca3af" }} />
+            : <ChevronRight style={{ width: 10, height: 10, color: "#9ca3af" }} />}
+        </div>
+      </div>
+
+      {/* Expanded panel */}
+      {open && (
+        <div style={{ padding: "0 12px 10px", background: "#fafafa", borderTop: "1px solid #f3f4f6" }}>
+          {m.shopifyStatus === "ghost" ? (
+            /* Ghost merchant — invite to Shopify */
+            <div style={{ paddingTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                <Ghost style={{ width: 11, height: 11, color: "#d97706" }} />
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#92400e" }}>Not on Shopify yet</span>
+              </div>
+              <p style={{ fontSize: 10, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.5 }}>
+                This spot isn't connected to the Shopify catalog — no live inventory, no one-tap checkout.
+              </p>
+              <a
+                href="https://www.shopify.com/start"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  padding: "7px 0", borderRadius: 10,
+                  background: "linear-gradient(135deg, #d97706, #f59e0b)",
+                  color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none",
+                }}
+              >
+                <ExternalLink style={{ width: 10, height: 10 }} /> Claim your store on Shopify
+              </a>
+            </div>
+          ) : loading ? (
+            /* Loading products */
+            <div style={{ paddingTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 12, height: 12, borderRadius: "50%", border: "2px solid #e5e7eb", borderTopColor: "#059669", animation: "spin 0.8s linear infinite" }} />
+              <span style={{ fontSize: 10, color: "#6b7280" }}>Loading products…</span>
+            </div>
+          ) : fetchError ? (
+            /* Error state */
+            <p style={{ paddingTop: 8, fontSize: 10, color: "#dc2626", margin: 0 }}>{fetchError}</p>
+          ) : products && products.length > 0 ? (
+            /* Product tiles */
+            <div style={{ paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              {products.map((p) => (
+                <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 8, background: "#fff", borderRadius: 10, padding: "6px 8px", border: "1px solid #e5e7eb" }}>
+                  {p.imageUrl ? (
+                    <img
+                      src={p.imageUrl} alt={p.title}
+                      style={{ width: 36, height: 36, borderRadius: 7, objectFit: "cover", flexShrink: 0 }}
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                  ) : (
+                    <div style={{ width: 36, height: 36, borderRadius: 7, background: "#f3f4f6", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <ShoppingBag style={{ width: 14, height: 14, color: "#9ca3af" }} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</p>
+                    <p style={{ margin: "1px 0 0", fontSize: 10, color: "#059669", fontWeight: 700 }}>{p.price}</p>
+                  </div>
+                  <a
+                    href={p.checkoutUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      padding: "5px 9px", borderRadius: 8,
+                      background: "linear-gradient(135deg, #059669, #34d399)",
+                      color: "#fff", fontSize: 9, fontWeight: 700,
+                      textDecoration: "none", flexShrink: 0,
+                      display: "flex", alignItems: "center", gap: 3,
+                    }}
+                  >
+                    <ShoppingBag style={{ width: 8, height: 8 }} /> Buy
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : products && products.length === 0 ? (
+            <p style={{ paddingTop: 8, fontSize: 10, color: "#6b7280", margin: 0 }}>No products listed right now.</p>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
+  const [showAll, setShowAll] = useState(false);
+  const verified = route.merchants.filter((m) => m.shopifyStatus === "verified");
+  const events = route.merchants.filter((m) => m.isEvent);
+  const visibleMerchants = showAll ? route.merchants : route.merchants.slice(0, 5);
+
+  return (
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #e5e7eb", overflow: "hidden", marginTop: 8, maxWidth: 280 }}>
       {/* Header */}
       <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid #f3f4f6" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <Route style={{ width: 12, height: 12, color: "#059669" }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: "#111827" }}>{route.intent}</span>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
           <span style={{ fontSize: 9, color: "#6b7280", padding: "2px 6px", borderRadius: 10, background: "#f3f4f6" }}>
             {route.merchants.length} stops
           </span>
@@ -317,37 +460,24 @@ function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
         </p>
       </div>
 
-      {/* Merchant list (top 5, expandable) */}
-      <div style={{ padding: "6px 0" }}>
-        {(expanded ? route.merchants : route.merchants.slice(0, 4)).map((m, i) => (
-          <div key={m.placeId} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", borderBottom: i < route.merchants.length - 1 ? "1px solid #f9fafb" : "none" }}>
-            <span style={{ fontSize: 12, flexShrink: 0 }}>{m.isEvent ? "🎪" : typeEmoji(m.type)}</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
-              <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>{m.distanceFromStartKm}km from start</p>
-            </div>
-            {m.shopifyStatus === "verified" && (
-              <div style={{ width: 14, height: 14, borderRadius: "50%", background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <CheckCircle2 style={{ width: 8, height: 8, color: "#059669" }} />
-              </div>
-            )}
-          </div>
+      {/* Hint */}
+      <p style={{ fontSize: 9, color: "#9ca3af", margin: 0, padding: "5px 12px 3px", fontStyle: "italic" }}>
+        Tap a stop to see products or details
+      </p>
+
+      {/* Merchant rows */}
+      <div>
+        {visibleMerchants.map((m, i) => (
+          <DiscoveryMerchantRow key={m.placeId} m={m} isLast={i === visibleMerchants.length - 1 && !(!showAll && route.merchants.length > 5)} />
         ))}
-        {route.merchants.length > 4 && (
+        {route.merchants.length > 5 && (
           <button
-            onClick={() => setExpanded((v) => !v)}
-            style={{ width: "100%", padding: "6px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", cursor: "pointer", fontWeight: 600 }}
+            onClick={() => setShowAll((v) => !v)}
+            style={{ width: "100%", padding: "7px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", borderTop: "1px solid #f3f4f6", cursor: "pointer", fontWeight: 600 }}
           >
-            {expanded ? "Show less ↑" : `+${route.merchants.length - 4} more stops ↓`}
+            {showAll ? "Show fewer stops ↑" : `+${route.merchants.length - 5} more stops ↓`}
           </button>
         )}
-      </div>
-
-      {/* Footer CTA */}
-      <div style={{ padding: "8px 12px", borderTop: "1px solid #f3f4f6", background: "#fafafa" }}>
-        <p style={{ fontSize: 9, color: "#6b7280", margin: "0 0 6px", lineHeight: 1.4 }}>
-          Route loaded on map ↗ · Shopify checkout on any verified stop
-        </p>
       </div>
     </div>
   );
