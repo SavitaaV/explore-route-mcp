@@ -280,7 +280,6 @@ function MerchantCard({ merchant, onFocus }: { merchant: Merchant; onFocus?: (id
 }
 
 function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
-  const [invited, setInvited] = useState(false);
   return (
     <div style={{
       background: "linear-gradient(135deg, #faf5ff, #f3e8ff)",
@@ -304,29 +303,27 @@ function UndiscoveredMerchantCard({ merchant }: { merchant: Merchant }) {
         </p>
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
           <Users style={{ width: 9, height: 9, color: "#7c3aed" }} />
-          <span style={{ fontSize: 10, color: "#7c3aed", fontWeight: 600 }}>{merchant.recentVisitors ?? 4} explorers found this · not yet online</span>
+          <span style={{ fontSize: 10, color: "#7c3aed", fontWeight: 600 }}>{merchant.recentVisitors ?? 4} explorers found this · local gem</span>
         </div>
         {merchant.story && (
           <p style={{ fontSize: 11, color: "#6b21a8", lineHeight: 1.5, fontStyle: "italic", margin: "0 0 10px", borderLeft: "2px solid #d8b4fe", paddingLeft: 8 }}>
             "{merchant.story}"
           </p>
         )}
-        <div style={{ fontSize: 10, color: "#7c3aed", marginBottom: 10, lineHeight: 1.5 }}>
-          No website, no social media — found by walkers like you. Stopping here gives this business its first digital moment.
-        </div>
-        {!invited ? (
-          <button
-            onClick={() => setInvited(true)}
-            style={{ width: "100%", padding: "8px 0", borderRadius: 12, background: "linear-gradient(135deg, #7c3aed, #a855f7)", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
-          >
-            <Sparkles style={{ width: 11, height: 11 }} /> Invite to Shopify
-          </button>
-        ) : (
-          <div style={{ padding: "8px 0", borderRadius: 12, background: "#f0fdf4", border: "1px solid #bbf7d0", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <CheckCircle2 style={{ width: 12, height: 12, color: "#059669" }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#059669" }}>Invite sent — Shopify will reach out</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 10, background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #bbf7d0", marginBottom: 8 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 7, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <ShoppingBag style={{ width: 10, height: 10, color: "#fff" }} />
           </div>
-        )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#065f46" }}>Shop Local by Shopify</p>
+            <p style={{ margin: 0, fontSize: 9, color: "#047857", lineHeight: 1.4 }}>Earn rewards when you pay local with Shop Pay</p>
+          </div>
+        </div>
+        <button
+          style={{ width: "100%", padding: "8px 0", borderRadius: 12, background: "#000", color: "#fff", fontSize: 11, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
+        >
+          <ShoppingBag style={{ width: 11, height: 11 }} /> Pay with Shop Pay
+        </button>
       </div>
     </div>
   );
@@ -502,28 +499,20 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
           )}
 
           {m.shopifyStatus === "ghost" ? (
-            /* Ghost merchant — invite to Shopify */
+            /* Shop Local rewards for non-connected merchants */
             <div style={{ paddingTop: m.isEvent || m.type === "farmer_market" ? 0 : 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-                <Ghost style={{ width: 11, height: 11, color: "#d97706" }} />
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#92400e" }}>Not on Shopify yet</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderRadius: 10, background: "linear-gradient(135deg, #f0fdf4, #dcfce7)", border: "1px solid #bbf7d0", marginBottom: 6 }}>
+                <div style={{ width: 22, height: 22, borderRadius: 7, background: "linear-gradient(135deg, #059669, #34d399)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <ShoppingBag style={{ width: 10, height: 10, color: "#fff" }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: "#065f46" }}>Shop Local by Shopify</p>
+                  <p style={{ margin: 0, fontSize: 9, color: "#047857", lineHeight: 1.4 }}>Earn rewards when you pay local with Shop Pay</p>
+                </div>
               </div>
-              <p style={{ fontSize: 10, color: "#6b7280", margin: "0 0 8px", lineHeight: 1.5 }}>
-                This spot isn't connected to the Shopify catalog — no live inventory, no one-tap checkout.
-              </p>
-              <a
-                href="https://www.shopify.com/start"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                  padding: "7px 0", borderRadius: 10,
-                  background: "linear-gradient(135deg, #d97706, #f59e0b)",
-                  color: "#fff", fontSize: 10, fontWeight: 700, textDecoration: "none",
-                }}
-              >
-                <ExternalLink style={{ width: 10, height: 10 }} /> Claim your store on Shopify
-              </a>
+              <button style={{ width: "100%", padding: "7px 0", borderRadius: 10, background: "#000", color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                <ShoppingBag style={{ width: 10, height: 10 }} /> Pay with Shop Pay
+              </button>
             </div>
           ) : loading ? (
             /* Loading products */
@@ -535,9 +524,12 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
             /* Error state */
             <p style={{ paddingTop: 8, fontSize: 10, color: "#dc2626", margin: 0 }}>{fetchError}</p>
           ) : products && products.length > 0 ? (
-            /* Product tiles — shared ProductTile component */
+            /* Product tiles + Shop Pay checkout */
             <div style={{ paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
               {products.map((p) => <ProductTile key={p.id} product={p} />)}
+              <button style={{ width: "100%", padding: "7px 0", borderRadius: 10, background: "#000", color: "#fff", fontSize: 10, fontWeight: 700, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginTop: 2 }}>
+                <ShoppingBag style={{ width: 10, height: 10 }} /> Pay with Shop Pay
+              </button>
             </div>
           ) : products && products.length === 0 ? (
             <p style={{ paddingTop: 8, fontSize: 10, color: "#6b7280", margin: 0 }}>No products listed right now.</p>
@@ -589,7 +581,7 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
   );
 
   const filteredMerchants = route.merchants.filter((m) => matchesFilter(m, activeFilter));
-  const visibleMerchants = showAll ? filteredMerchants : filteredMerchants.slice(0, 5);
+  const visibleMerchants = showAll ? filteredMerchants : filteredMerchants.slice(0, 2);
 
   const handleFilterChange = (key: FilterKey) => {
     setActiveFilter(key);
@@ -630,11 +622,6 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
           <span style={{ fontSize: 9, color: "#6b7280", padding: "2px 6px", borderRadius: 10, background: "#f3f4f6" }}>
             {route.totalDistanceKm}km · ~{route.estimatedWalkMinutes}min
           </span>
-          {verified.length > 0 && (
-            <span style={{ fontSize: 9, color: "#059669", padding: "2px 6px", borderRadius: 10, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
-              {verified.length} Shopify verified
-            </span>
-          )}
           {events.length > 0 && (
             <span style={{ fontSize: 9, color: "#7c3aed", padding: "2px 6px", borderRadius: 10, background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
               {events.length} event{events.length > 1 ? "s" : ""}
@@ -694,14 +681,14 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
         ) : (
           <>
             {visibleMerchants.map((m, i) => (
-              <DiscoveryMerchantRow key={m.placeId} m={m} isLast={i === visibleMerchants.length - 1 && !(!showAll && filteredMerchants.length > 5)} />
+              <DiscoveryMerchantRow key={m.placeId} m={m} isLast={i === visibleMerchants.length - 1 && !(!showAll && filteredMerchants.length > 2)} />
             ))}
-            {filteredMerchants.length > 5 && (
+            {filteredMerchants.length > 2 && (
               <button
                 onClick={() => setShowAll((v) => !v)}
                 style={{ width: "100%", padding: "7px", fontSize: 10, color: "#6366f1", background: "transparent", border: "none", borderTop: "1px solid #f3f4f6", cursor: "pointer", fontWeight: 600 }}
               >
-                {showAll ? "Show fewer stops ↑" : `+${filteredMerchants.length - 5} more stops ↓`}
+                {showAll ? "Show fewer stops ↑" : `+${filteredMerchants.length - 2} more stops ↓`}
               </button>
             )}
           </>
