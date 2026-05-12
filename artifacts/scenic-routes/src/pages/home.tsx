@@ -10,6 +10,7 @@ import { MapView } from "@/components/MapView";
 import { AiChat } from "@/components/AiChat";
 import { AppleWatch } from "@/components/AppleWatch";
 import { MerchantGraph } from "@/components/MerchantGraph";
+import { McpToolsPanel } from "@/components/McpToolsPanel";
 import { Wifi, Battery, Signal, MapPin, Network } from "lucide-react";
 
 function useTime() {
@@ -60,7 +61,7 @@ export default function Home() {
   const [selectedMerchantId, setSelectedMerchantId] = useState<string | null>(null);
 
   // Top-level view toggle
-  const [mainView, setMainView] = useState<"journey" | "graph">("journey");
+  const [mainView, setMainView] = useState<"journey" | "graph" | "mcp">("journey");
 
   // Dynamic route — set from chat when user picks a location
   const [routeParams, setRouteParams] = useState<{ origin: string; dest: string; mode: string } | null>(null);
@@ -229,6 +230,18 @@ export default function Home() {
             <Network style={{ width: 9, height: 9, display: "inline", marginRight: 5 }} />
             Network Graph
           </button>
+          <button
+            onClick={() => setMainView("mcp")}
+            style={{
+              padding: "6px 18px", borderRadius: 20, fontSize: 10, fontWeight: 700,
+              border: "none", cursor: "pointer", letterSpacing: 0.4, textTransform: "uppercase",
+              background: mainView === "mcp" ? "rgba(52,211,153,0.18)" : "transparent",
+              color: mainView === "mcp" ? "#34d399" : "rgba(255,255,255,0.35)",
+              transition: "all 0.2s",
+            }}
+          >
+            MCP Tools
+          </button>
         </div>
 
         {/* Right — live status + powered by */}
@@ -273,6 +286,23 @@ export default function Home() {
           /* ── Full-screen Network Graph ── */
           <div style={{ width: "100%", height: "100%" }}>
             <MerchantGraph onMerchantClick={handlePinClick} />
+          </div>
+        ) : mainView === "mcp" ? (
+          /* ── MCP Tools Panel ── */
+          <div style={{ width: "100%", height: "100%", overflowY: "auto", padding: "24px 40px" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: "rgba(255,255,255,0.3)", marginBottom: 6 }}>
+                MCP Tool Schemas
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", maxWidth: 640 }}>
+                These are the tools exposed by the Scenic Routes MCP server. Claude can invoke them automatically based on user intent.
+              </div>
+            </div>
+            {mcpTools ? (
+              <McpToolsPanel tools={mcpTools} />
+            ) : (
+              <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Loading tools…</div>
+            )}
           </div>
         ) : (
           /* ── User Journey split-screen ── */

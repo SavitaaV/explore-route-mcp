@@ -164,7 +164,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       if (chunk.type === "content_block_start" && chunk.content_block.type === "tool_use") {
         toolUseId = chunk.content_block.id;
         toolUseName = chunk.content_block.name;
-        sendEvent("tool_use", { tool: toolUseName });
+        // Defer tool_use SSE until input is fully assembled (see below)
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "input_json_delta") {
         inputJsonAccum += chunk.delta.partial_json;
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
@@ -180,6 +180,9 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
       const intent = toolInput.intent ?? content.trim();
       const city = toolInput.city;
+
+      // Emit tool_use event now that we have the full input — frontend shows loading card
+      sendEvent("tool_use", { tool: toolUseName, intent, city });
 
       // Execute the tool
       const routeData = await executePlanDiscovery(intent, city);

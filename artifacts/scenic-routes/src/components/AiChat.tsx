@@ -761,7 +761,9 @@ export function AiChat({
               const rawData = JSON.parse(line.slice(6)) as Record<string, unknown>;
 
               if (currentEventType === "tool_use") {
-                // Claude is invoking plan_discovery_route — show loading card
+                // Claude is invoking plan_discovery_route — show loading card with parsed intent/city
+                const loadingIntent = (rawData.intent as string | undefined) ?? (rawData.tool as string | undefined) ?? "discovery route";
+                const loadingCity = rawData.city as string | undefined;
                 setMessages((prev) => [
                   ...prev,
                   {
@@ -769,7 +771,7 @@ export function AiChat({
                     role: "assistant" as const,
                     content: "",
                     timestamp: new Date(),
-                    discoveryLoadingCard: { intent: (rawData.tool as string | undefined) ?? "discovery" },
+                    discoveryLoadingCard: { intent: loadingIntent, city: loadingCity },
                     skipSources: true,
                   },
                 ]);
