@@ -1330,7 +1330,19 @@ export function AiChat({
     // Deduplicate by stable key (intent + location name) rather than object identity,
     // so parent re-renders with the same data don't re-trigger narration
     const routeKey = `${discoveryRoute.intent}:${discoveryRoute.resolvedLocation.name}`;
-    if (routeKey === prevDiscoveryRef.current) return;
+    if (routeKey === prevDiscoveryRef.current) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `dup-route-${Date.now()}`,
+          role: "assistant" as const,
+          content: "You already have that route loaded — want me to suggest something different? Try asking for a different neighbourhood, vibe, or type of stop.",
+          timestamp: new Date(),
+          skipSources: true,
+        },
+      ]);
+      return;
+    }
     prevDiscoveryRef.current = routeKey;
 
     const route = discoveryRoute;
