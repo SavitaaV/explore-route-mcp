@@ -934,7 +934,8 @@ export function AiChat({
 
     return () => { cancelled = true; };
   }, []);
-  const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
+  const prevDiscoveryRef = useRef<string | null>(null);
+  const narrationInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (messages.length > messageCountRef.current) {
@@ -1146,9 +1147,14 @@ export function AiChat({
   }, []);
 
   // Stream a Claude narration for the discovery route via SSE (uses own abort ref, doesn't block user input)
-  const streamDiscoveryNarration = useCallback(async (route: DiscoveryRouteData) => {
+  const streamDiscoveryNarration = useCallback(async (route: DiscoveryRouteData, routeKey?: string) => {
+    // Skip if already narrating this exact route
+    if (routeKey && narrationInFlightRef.current === routeKey) return;
+
     narrateAbortRef.current?.abort();
     narrateAbortRef.current = new AbortController();
+
+    if (routeKey) narrationInFlightRef.current = routeKey;
 
     let narrativeMsgId: string | null = null;
     let fullText = "";
@@ -1239,14 +1245,23 @@ export function AiChat({
         const id = narrativeMsgId;
         setMessages((prev) => prev.map((m) => m.id === id ? { ...m, content: fullText || "…", streaming: false } : m));
       }
+    } finally {
+      if (routeKey && narrationInFlightRef.current === routeKey) {
+        narrationInFlightRef.current = null;
+      }
     }
   }, [routeContext, merchants, userPosition]);
 
   // Discovery route prop changed → replace loading card, then auto-stream Claude narration
   // Skip narration when the inline sendMessage tool-call path already has a follow-up stream running
   useEffect(() => {
-    if (!discoveryRoute || discoveryRoute === prevDiscoveryRef.current) return;
-    prevDiscoveryRef.current = discoveryRoute;
+    if (!discoveryRoute) return;
+
+    // Deduplicate by stable key (intent + location name) rather than object identity,
+    // so parent re-renders with the same data don't re-trigger narration
+    const routeKey = `${discoveryRoute.intent}:${discoveryRoute.resolvedLocation.name}`;
+    if (routeKey === prevDiscoveryRef.current) return;
+    prevDiscoveryRef.current = routeKey;
 
     const route = discoveryRoute;
 
@@ -1279,11 +1294,13 @@ export function AiChat({
     });
 
     // Auto-stream Claude's narrative — but skip if sendMessage already produced a follow-up
-    // stream for this route (inlineDiscoveryActiveRef prevents duplicate narration)
+    // stream for this route (inlineDiscoveryActiveRef prevents duplicate narration),
+    // or if a narration for this same route key is already in-flight
     if (inlineDiscoveryActiveRef.current) return;
+    if (narrationInFlightRef.current === routeKey) return;
 
     const timer = setTimeout(() => {
-      streamDiscoveryNarration(route);
+      streamDiscoveryNarration(route, routeKey);
     }, 300);
 
     return () => clearTimeout(timer);
