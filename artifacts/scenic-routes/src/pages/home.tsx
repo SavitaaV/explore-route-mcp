@@ -54,7 +54,7 @@ function PhoneHomeIndicator({ color = "#000" }: { color?: string }) {
 }
 
 export default function Home() {
-  const [mcpEnabled, setMcpEnabled] = useState(false);
+  const [mcpEnabled] = useState(true);
   const [journeyStarted, setJourneyStarted] = useState(false);
   const [journeyProgress, setJourneyProgress] = useState(0);
   const [watchAlert, setWatchAlert] = useState<{ name: string; type: string } | null>(null);
@@ -340,21 +340,6 @@ export default function Home() {
                     discoveryRoute={discoveryRoute ?? null}
                   />
 
-                  {/* Overlay when MCP not enabled */}
-                  {!mcpEnabled && (
-                    <div style={{
-                      position: "absolute", inset: 0,
-                      background: "rgba(6,8,16,0.6)", backdropFilter: "blur(2px)",
-                      display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8,
-                    }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 12, background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <MapPin style={{ width: 18, height: 18, color: "#34d399" }} />
-                      </div>
-                      <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textAlign: "center", maxWidth: 140, lineHeight: 1.5 }}>
-                        Enable Explore Route MCP in the chat to activate navigation
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <PhoneHomeIndicator color="#fff" />
@@ -406,7 +391,7 @@ export default function Home() {
                     journeyProgress={journeyProgress}
                     journeyStarted={journeyStarted}
                     mcpEnabled={mcpEnabled}
-                    onMcpEnable={() => setMcpEnabled(true)}
+                    onMcpEnable={() => {}}
                     onRouteRequest={handleRouteRequest}
                     onStartJourney={handleStartJourney}
                     userPosition={userPosition}

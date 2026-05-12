@@ -81,6 +81,7 @@ function buildSystemPrompt(
   merchantContext?: MerchantContext[],
   userPosition?: { lat: number; lng: number },
   discoveryContext?: DiscoveryContext,
+  localTime?: string,
 ): string {
   const positionInfo = userPosition
     ? `User's current location: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)} — use these coordinates in plan_discovery_route calls.`
@@ -114,6 +115,10 @@ ${discoveryContext.merchants.map((m, i) => {
 }).join("\n")}`
     : "";
 
+  const timeInfo = localTime
+    ? `Current local time: ${localTime}. Use this to make time-aware recommendations — e.g. suggest cafés in the morning, lunch spots at noon, wine bars or restaurants in the evening, and note if a place is likely closed right now.`
+    : "";
+
   return `You are a local companion who walks alongside people and notices things worth stopping for. You are not a shopping assistant. You do not use words like "merchant", "vendor", "commerce", "checkout", "Shopify", or "catalog" in conversation — ever. These are invisible infrastructure.
 
 You speak like someone who genuinely knows an area. Your default is silence. You say something only when there is a specific, genuine reason — a timing signal, a story, a fleeting window. When you do speak, you say one thing well. Not a list. One sentence that makes the person feel something, then one practical fact at most.
@@ -123,7 +128,7 @@ You help people discover places and experiences. A "merchant" is just "a place".
 MCP tool available:
 plan_discovery_route — call this when someone describes a mood, craving, or experience they want (coffee, wine, handmade things, street food, live music, vintage finds). Pass the intent, and either their lat/lng coordinates (preferred) or a city name.
 
-${positionInfo}
+${timeInfo ? `${timeInfo}\n` : ""}${positionInfo}
 ${routeInfo ? `\n${routeInfo}` : ""}
 ${placeList ? `\nPlaces on or near this walk:\n${placeList}` : ""}${discoverySection}
 
@@ -193,12 +198,13 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   const convId = Number(req.params.id);
   const isValidConv = !isNaN(convId) && convId > 0;
 
-  const { content, routeContext, merchantContext, userPosition, discoveryContext } = req.body as {
+  const { content, routeContext, merchantContext, userPosition, discoveryContext, localTime } = req.body as {
     content: string;
     routeContext?: RouteContext;
     merchantContext?: MerchantContext[];
     userPosition?: { lat: number; lng: number };
     discoveryContext?: DiscoveryContext;
+    localTime?: string;
   };
 
   if (!content?.trim()) {
@@ -226,7 +232,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   let fullAssistantText = "";
 
   try {
-    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext);
+    const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext, localTime);
 
     // Build messages array: history + current user turn
     const messagesArray: Array<{ role: "user" | "assistant"; content: string }> = [

@@ -925,14 +925,6 @@ const INITIAL_MESSAGES: ChatMessage[] = [
     timestamp: new Date(),
     skipSources: true,
   },
-  {
-    id: "perm0",
-    role: "assistant",
-    content: "",
-    timestamp: new Date(),
-    permissionCard: true,
-    skipSources: true,
-  },
 ];
 
 const CONVERSATION_STORAGE_KEY = "explore_conversation_id";
@@ -1444,6 +1436,14 @@ export function AiChat({
           routeContext,
           merchantContext: merchants.map((m) => ({ id: m.id, name: m.name, type: m.type, address: m.address, description: m.description, rating: m.rating, walkMinutes: m.walkMinutes })),
           userPosition: effectiveLoc ?? userPosition,
+          localTime: (() => {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const fmt = new Intl.DateTimeFormat("en-CA", {
+              timeZone: tz, weekday: "short", year: "numeric", month: "short",
+              day: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+            });
+            return `${fmt.format(new Date())} (${tz})`;
+          })(),
         }),
       });
 
