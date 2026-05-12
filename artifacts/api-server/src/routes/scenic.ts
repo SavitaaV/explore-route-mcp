@@ -726,7 +726,7 @@ interface PlacesResult {
   geometry: { location: { lat: number; lng: number } };
   rating?: number;
   user_ratings_total?: number;
-  opening_hours?: { open_now?: boolean };
+  opening_hours?: { open_now?: boolean; weekday_text?: string[] };
   vicinity?: string;
 }
 
@@ -1526,6 +1526,7 @@ function buildMockDiscoveryRoute(
     distanceFromStartKm: number; shopifyStatus: "verified" | "ghost";
     isEvent: boolean; chainTier: string; openNow: boolean | null;
     photoUrl: string | null; checkoutUrl: string | null;
+    operatingSeason?: string; upcomingDates?: string[]; weekdayText?: string[];
   }>;
   totalDistanceKm: number;
   estimatedWalkMinutes: number;
@@ -1561,10 +1562,56 @@ function buildMockDiscoveryRoute(
     };
   });
 
+  // Inject 1–2 mock event stops so the event layer is testable without a real API key
+  const mockEvents = [
+    {
+      placeId: "mock-event-farmers-market",
+      name: "Local Farmers Market",
+      type: "farmer_market",
+      lat: centre.lat + 0.003,
+      lng: centre.lng + 0.002,
+      vicinity: "Town Square",
+      rating: 4.7,
+      userRatingsTotal: 82,
+      distanceFromStartKm: 0.4,
+      shopifyStatus: "ghost" as const,
+      isEvent: true,
+      chainTier: "local",
+      openNow: null,
+      photoUrl: null,
+      checkoutUrl: null,
+      operatingSeason: "Saturdays, May–October · 8am–1pm",
+      upcomingDates: nextSaturdays(2),
+      weekdayText: ["Saturday: 8:00 AM – 1:00 PM", "Sunday: Closed"],
+    },
+    {
+      placeId: "mock-event-popup-festival",
+      name: "Artisan Pop-up Festival",
+      type: "artisan",
+      lat: centre.lat - 0.002,
+      lng: centre.lng + 0.003,
+      vicinity: "Waterfront Park",
+      rating: 4.5,
+      userRatingsTotal: 34,
+      distanceFromStartKm: 0.6,
+      shopifyStatus: "ghost" as const,
+      isEvent: true,
+      chainTier: "local",
+      openNow: true,
+      photoUrl: null,
+      checkoutUrl: null,
+      operatingSeason: "Check locally for seasonal dates",
+      upcomingDates: nextSaturdays(2),
+    },
+  ];
+
+  // Merge event stops into ordered list (cap total at 8)
+  const allMerchants = [...ordered.slice(0, 6), ...mockEvents];
+
   // Total walking distance along the NN path
   let totalM = 0;
   let prev = centre;
-  for (const m of ordered) {
+  for (const m of allMerchants) {
     totalM += haversineMetre(prev.lat, prev.lng, m.lat, m.lng);
     prev = m;
   }
@@ -1572,7 +1619,7 @@ function buildMockDiscoveryRoute(
   return {
     intent,
     resolvedLocation: centre,
-    merchants: ordered,
+    merchants: allMerchants,
     totalDistanceKm: totalKm,
     estimatedWalkMinutes: Math.round(totalKm * 12),
     source: "mock",
@@ -1705,15 +1752,15 @@ export async function computePlanDiscovery(params: {
     byDomain: new Map<string, { products: CatalogProduct[]; categories: Set<string> }>(),
   }));
 
-  // Place Details (website) in parallel
-  const detailsMap = new Map<string, { website?: string }>();
+  // Place Details (website + opening_hours) in parallel
+  const detailsMap = new Map<string, { website?: string; opening_hours?: { weekday_text?: string[] } }>();
   await Promise.all(
     ordered.map(async (p) => {
       try {
         const r = await fetch(
-          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website&key=${GOOGLE_MAPS_API_KEY}`
+          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${p.place_id}&fields=website,opening_hours&key=${GOOGLE_MAPS_API_KEY}`
         );
-        const d = (await r.json()) as { result?: { website?: string } };
+        const d = (await r.json()) as { result?: { website?: string; opening_hours?: { weekday_text?: string[] } } };
         if (d.result) detailsMap.set(p.place_id, d.result);
       } catch { /* skip */ }
     })
@@ -1783,8 +1830,15 @@ export async function computePlanDiscovery(params: {
 
   const merchants = merchantDrafts.map((d) => {
     const p = d.place;
-    const operatingSeason = d.type === "farmer_market" ? "Saturdays, May–October · 8am–1pm" : null;
-    const upcomingDates = p.isEvent ? nextSaturdays(2) : null;
+    const isEventStop = p.isEvent || d.type === "farmer_market";
+    const operatingSeason = d.type === "farmer_market"
+      ? "Saturdays, May–October · 8am–1pm"
+      : isEventStop
+        ? "Check locally for seasonal dates"
+        : null;
+    const upcomingDates = isEventStop ? nextSaturdays(2) : null;
+    const details = detailsMap.get(p.place_id);
+    const weekdayText = details?.opening_hours?.weekday_text ?? null;
     return {
       placeId: p.place_id,
       name: p.name,
@@ -1803,6 +1857,7 @@ export async function computePlanDiscovery(params: {
       checkoutUrl: d.checkoutUrl,
       ...(operatingSeason ? { operatingSeason } : {}),
       ...(upcomingDates ? { upcomingDates } : {}),
+      ...(weekdayText ? { weekdayText } : {}),
     };
   });
 

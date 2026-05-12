@@ -697,6 +697,12 @@ components:
             type: string
           nullable: true
           description: ISO date strings for upcoming event occurrences — populated for isEvent=true merchants
+        weekdayText:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Human-readable hours per weekday from Google Place Details (e.g. "Monday: 9:00 AM – 5:00 PM") — null when unavailable
       required: [placeId, name, type, lat, lng, vicinity, rating, userRatingsTotal, distanceFromStartKm, shopifyStatus, isEvent, chainTier, openNow]
 
     DiscoveryRoute:

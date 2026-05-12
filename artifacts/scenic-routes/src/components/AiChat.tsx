@@ -38,6 +38,10 @@ interface DiscoveryMerchant {
   isEvent: boolean;
   distanceFromStartKm: number;
   checkoutUrl?: string | null;
+  openNow?: boolean | null;
+  operatingSeason?: string | null;
+  upcomingDates?: string[] | null;
+  weekdayText?: string[] | null;
 }
 
 interface DiscoveryRouteData {
@@ -364,10 +368,23 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
         onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "#fafafa"; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = open ? "#fafafa" : "transparent"; }}
       >
-        <span style={{ fontSize: 13, flexShrink: 0 }}>{m.isEvent ? "🎪" : getMerchantEmoji(m.type)}</span>
+        <span style={{ fontSize: 13, flexShrink: 0 }}>{m.isEvent || m.type === "farmer_market" ? "🎪" : getMerchantEmoji(m.type)}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</p>
-          <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>{m.distanceFromStartKm}km · {m.rating ? `⭐ ${m.rating}` : m.vicinity?.split(",")[0] ?? ""}</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 9, color: "#9ca3af" }}>{m.distanceFromStartKm}km{m.rating ? ` · ⭐ ${m.rating}` : ""}</span>
+            {(m.isEvent || m.type === "farmer_market") && m.operatingSeason && (
+              <span style={{ fontSize: 8, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 6, padding: "1px 5px", fontWeight: 600, whiteSpace: "nowrap" }}>
+                {m.operatingSeason.includes("Saturday") ? "Saturdays only" : "Seasonal"}
+              </span>
+            )}
+            {m.openNow === true && (
+              <span style={{ fontSize: 8, color: "#059669", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 6, padding: "1px 5px", fontWeight: 600 }}>Open</span>
+            )}
+            {m.openNow === false && (
+              <span style={{ fontSize: 8, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 6, padding: "1px 5px", fontWeight: 600 }}>Closed</span>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
           {m.shopifyStatus === "verified" ? (
@@ -388,9 +405,64 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
       {/* Expanded panel */}
       {open && (
         <div style={{ padding: "0 12px 10px", background: "#fafafa", borderTop: "1px solid #f3f4f6" }}>
+          {/* ── Event / farmers-market details block (shown for all event stops) ── */}
+          {(m.isEvent || m.type === "farmer_market") && (
+            <div style={{ paddingTop: 8, marginBottom: 8 }}>
+              {/* Header badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                <span style={{ fontSize: 11 }}>🎪</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed" }}>
+                  {m.type === "farmer_market" ? "Farmers Market" : "Pop-up / Event"}
+                </span>
+              </div>
+
+              {/* Operating season */}
+              {m.operatingSeason && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 5, marginBottom: 5 }}>
+                  <Clock style={{ width: 10, height: 10, color: "#7c3aed", marginTop: 1, flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: "#6b21a8", fontWeight: 600 }}>{m.operatingSeason}</span>
+                </div>
+              )}
+
+              {/* Weekday hours from Place Details (show Sat/Sun only for events, all for markets) */}
+              {m.weekdayText && m.weekdayText.length > 0 && (
+                <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.6, marginBottom: 5, paddingLeft: 15 }}>
+                  {(m.type === "farmer_market"
+                    ? m.weekdayText.filter((l) => /saturday|sunday/i.test(l))
+                    : m.weekdayText
+                  ).slice(0, 3).map((line, i) => (
+                    <div key={i}>{line}</div>
+                  ))}
+                </div>
+              )}
+
+              {/* Upcoming dates pills */}
+              {m.upcomingDates && m.upcomingDates.length > 0 && (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {m.upcomingDates.map((iso) => {
+                    const d = new Date(iso + "T12:00:00");
+                    const label = d.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+                    return (
+                      <span key={iso} style={{
+                        fontSize: 9, fontWeight: 700, color: "#7c3aed",
+                        background: "#f5f3ff", border: "1px solid #ddd6fe",
+                        borderRadius: 8, padding: "2px 7px",
+                      }}>
+                        {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Divider before product/ghost section */}
+              <div style={{ height: 1, background: "#e5e7eb", margin: "8px 0 0" }} />
+            </div>
+          )}
+
           {m.shopifyStatus === "ghost" ? (
             /* Ghost merchant — invite to Shopify */
-            <div style={{ paddingTop: 8 }}>
+            <div style={{ paddingTop: m.isEvent || m.type === "farmer_market" ? 0 : 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
                 <Ghost style={{ width: 11, height: 11, color: "#d97706" }} />
                 <span style={{ fontSize: 10, fontWeight: 700, color: "#92400e" }}>Not on Shopify yet</span>
