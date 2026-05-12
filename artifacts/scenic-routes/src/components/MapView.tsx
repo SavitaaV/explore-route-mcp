@@ -28,6 +28,8 @@ interface DiscoveryMerchant {
   isEvent: boolean;
   distanceFromStartKm: number;
   checkoutUrl?: string | null;
+  operatingSeason?: string | null;
+  upcomingDates?: string[] | null;
 }
 
 interface DiscoveryRouteData {
@@ -242,8 +244,9 @@ function SvgMapPlaceholder({
               <path d={dPath} stroke="#6366f1" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="8 5" />
               {discoveryRoute.merchants.map((m, i) => {
                 const { x, y } = mapToSVG(m.lat, m.lng);
-                const color = m.shopifyStatus === "verified" ? "#059669" : "#d97706";
-                const emoji = m.isEvent ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
+                const isEventStop = m.isEvent || m.type === "farmer_market";
+                const color = isEventStop ? "#7c3aed" : (m.shopifyStatus === "verified" ? "#059669" : "#d97706");
+                const emoji = isEventStop ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
                 return (
                   <g key={`dr-${m.placeId}-${i}`} transform={`translate(${x - 11}, ${y - 22})`}>
                     <path d="M11 0C6.58 0 3 3.58 3 8c0 6 8 14 8 14s8-8 8-14c0-4.42-3.58-8-8-8z" fill={color} stroke="white" strokeWidth="1.5" />
@@ -294,6 +297,7 @@ function GoogleMapComponent({
   const polylineRef = useRef<google.maps.Polyline | null>(null);
   const discoveryPolylineRef = useRef<google.maps.Polyline | null>(null);
   const discoveryMarkersRef = useRef<google.maps.Marker[]>([]);
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
 
   useEffect(() => {
     if (!mapRef.current || !window.google) return;
@@ -363,10 +367,17 @@ function GoogleMapComponent({
       }],
     });
 
+    // Shared InfoWindow (one at a time) — created lazily
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new window.google.maps.InfoWindow();
+    }
+
     // Pins for discovery merchants
     discoveryRoute.merchants.forEach((m) => {
-      const emoji = m.isEvent ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
-      const color = m.shopifyStatus === "verified" ? "#059669" : "#d97706";
+      const isEventStop = m.isEvent || m.type === "farmer_market";
+      const emoji = isEventStop ? "🎪" : (m.type === "winery" ? "🍷" : m.type === "bakery" ? "🥐" : m.type === "cafe" ? "☕" : "🏪");
+      // Purple for events, green/amber for regular verified/ghost merchants
+      const color = isEventStop ? "#7c3aed" : (m.shopifyStatus === "verified" ? "#059669" : "#d97706");
       const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="36" height="42" viewBox="0 0 36 42">
         <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter>
         <path d="M18 2C10.27 2 4 8.27 4 16C4 26 18 40 18 40C18 40 32 26 32 16C32 8.27 25.73 2 18 2Z"
@@ -383,6 +394,27 @@ function GoogleMapComponent({
           anchor: new window.google.maps.Point(18, 42),
         },
       });
+
+      // Event stops get a click-through InfoWindow showing seasonal details
+      if (isEventStop) {
+        const upcomingLabels = (m.upcomingDates ?? [])
+          .slice(0, 3)
+          .map((iso) => new Date(iso + "T12:00:00").toLocaleDateString("en-CA", { month: "short", day: "numeric" }))
+          .join(" · ");
+        const infoContent = `
+          <div style="font-family:system-ui,sans-serif;max-width:190px;padding:2px 0">
+            <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#111827">${m.name}</p>
+            ${m.operatingSeason ? `<p style="margin:0 0 4px;font-size:11px;color:#7c3aed;font-weight:600">📅 ${m.operatingSeason}</p>` : ""}
+            ${upcomingLabels ? `<p style="margin:0;font-size:11px;color:#6b7280">Next: ${upcomingLabels}</p>` : ""}
+          </div>`;
+        marker.addListener("click", () => {
+          if (infoWindowRef.current && mapInstanceRef.current) {
+            infoWindowRef.current.setContent(infoContent);
+            infoWindowRef.current.open(mapInstanceRef.current, marker);
+          }
+        });
+      }
+
       discoveryMarkersRef.current.push(marker);
     });
 
