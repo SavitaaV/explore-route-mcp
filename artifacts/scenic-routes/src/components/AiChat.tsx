@@ -573,17 +573,21 @@ function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
           {/* Save / Share action buttons */}
           <button
             onClick={onShare}
+            aria-label={copied ? "Copied!" : "Copy route summary"}
             title={copied ? "Copied!" : "Copy route summary"}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center", color: copied ? "#059669" : "#9ca3af", transition: "color 0.15s" }}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center", gap: 3, color: copied ? "#059669" : "#9ca3af", transition: "color 0.15s", borderRadius: 6 }}
           >
             {copied ? <Check style={{ width: 11, height: 11 }} /> : <Copy style={{ width: 11, height: 11 }} />}
+            <span style={{ fontSize: 9, fontWeight: 500 }}>{copied ? "Copied" : "Share"}</span>
           </button>
           <button
             onClick={onSave}
-            title={isSaved ? "Remove from saved" : "Save this route"}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center", color: isSaved ? "#6366f1" : "#9ca3af", transition: "color 0.15s" }}
+            aria-label={isSaved ? "Remove from saved routes" : "Save this route"}
+            title={isSaved ? "Remove from saved routes" : "Save this route"}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: "2px 4px", display: "flex", alignItems: "center", gap: 3, color: isSaved ? "#6366f1" : "#9ca3af", transition: "color 0.15s", borderRadius: 6 }}
           >
             {isSaved ? <BookmarkCheck style={{ width: 12, height: 12 }} /> : <Bookmark style={{ width: 12, height: 12 }} />}
+            <span style={{ fontSize: 9, fontWeight: 500 }}>{isSaved ? "Saved" : "Save"}</span>
           </button>
         </div>
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
@@ -1100,9 +1104,12 @@ export function AiChat({
 
   const handleShareRoute = useCallback((route: DiscoveryRouteData) => {
     const key = routeKey(route);
-    void navigator.clipboard.writeText(buildShareText(route));
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey((prev) => prev === key ? null : prev), 2000);
+    navigator.clipboard.writeText(buildShareText(route)).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((prev) => prev === key ? null : prev), 2000);
+    }).catch(() => {
+      // Clipboard unavailable (insecure context or denied) — no false success state shown
+    });
   }, []);
 
   const handleDeleteSaved = useCallback((id: string) => {
