@@ -1,0 +1,41 @@
+Great questions. Let me search and verify before saying anything.Good news and bad news. Here's the honest verified picture.
+
+**On whether you need the Shop app to use Shop Pay:**
+
+Shop Pay allows users to securely store shipping and billing information in their Shop account, enabling one-click checkouts across online stores that offer Shop Pay. The Shop app is separate from Shop Pay. You do not need the Shop app to pay with Shop Pay — it works directly at any checkout that has it enabled.
+
+**On Shop Pay for non-Shopify merchants:**
+
+In 2024, Shop Pay expanded to other commerce platforms and no longer required businesses to be on Shopify to use it. And merchants selling on Instagram, TikTok, and Google can now offer the Shop Pay checkout button directly on those platforms.
+
+**But here is the hard truth for your use case:**
+
+Shop Pay is primarily restricted to Shopify merchants. Facebook, Instagram, and Google sellers also have access to Shop Pay, but other eCommerce platforms are currently excluded.
+
+This means Shop Pay works for merchants who already have some digital storefront — Shopify, Facebook Shop, Instagram, TikTok Shop, or Google. A completely offline merchant with no digital presence whatsoever still cannot accept Shop Pay. There is no checkout page to put the button on.
+
+---
+
+**What this means for your Explore Route MCP:**
+
+The Shop Local by Shopify rewards idea works — but only in a specific way.
+
+The reward fires on the user side regardless of the merchant's payment infrastructure. The user visits a non-Shopify merchant, geofence confirms the visit, Shop Cash or loyalty reward credits to their Shop account. No merchant action required. That mechanism is clean and feasible.
+
+But the actual transaction at the non-Shopify merchant — the user paying for the product — happens however the merchant accepts payment today. Cash, card, their existing POS. Explore Route cannot intercept that transaction because there is no digital checkout to route through.
+
+**So the Shop Local by Shopify rewards program works like this:**
+
+User accepts Explore Route recommendation → travels to non-Shopify merchant → buys in person however they normally would → geofence confirms visit → Shop Cash reward fires to user's Shop account automatically. The merchant is completely uninvolved in the reward. The user is incentivised to take future Explore Route recommendations. Shopify gets the visit signal and the user loyalty data.
+
+That is clean, feasible, and genuinely novel. No Shop Pay required from the merchant side at all.
+
+---
+
+**The two bullets now with this precise understanding:**
+
+*"Built an MCP server that surfaces independent local merchants to AI agents based on route context and movement intent, rewarding verified visits with Shop Local by Shopify incentives through geofence confirmation — decoupling user value and loyalty from merchant payment infrastructure entirely."*
+
+*"Generates verified foot traffic and agent-intent signals for non-Shopify merchants, giving Shopify's acquisition team proof-of-demand data that converts cold outreach into a quantified missed-revenue conversation — addressing both merchants with no digital presence and those on competing platforms invisible to agentic commerce."*
+
+Want to go with these? 🎯
