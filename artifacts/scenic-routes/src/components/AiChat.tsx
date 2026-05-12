@@ -911,7 +911,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
-const CONVERSATION_STORAGE_KEY = "explore_conversation_id";
+const CONVERSATION_STORAGE_KEY = "explore_conversation_v2";
 
 export function AiChat({
   merchants, routeContext, journeyProgress, journeyStarted,
@@ -999,6 +999,7 @@ export function AiChat({
     return () => { cancelled = true; };
   }, []);
   const prevDiscoveryRef = useRef<string | null>(null);
+  const shownDupNudgesRef = useRef<Set<string>>(new Set());
   const narrationInFlightRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1314,16 +1315,20 @@ export function AiChat({
     // so parent re-renders with the same data don't re-trigger narration
     const routeKey = `${discoveryRoute.intent}:${discoveryRoute.resolvedLocation.name}`;
     if (routeKey === prevDiscoveryRef.current) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `dup-route-${Date.now()}`,
-          role: "assistant" as const,
-          content: "You already have that route loaded — want me to suggest something different? Try asking for a different neighbourhood, vibe, or type of stop.",
-          timestamp: new Date(),
-          skipSources: true,
-        },
-      ]);
+      // Only show the nudge once per duplicate route, even if effect re-fires
+      if (!shownDupNudgesRef.current.has(routeKey)) {
+        shownDupNudgesRef.current.add(routeKey);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `dup-route-${Date.now()}`,
+            role: "assistant" as const,
+            content: "You already have that route loaded — want me to suggest something different?",
+            timestamp: new Date(),
+            skipSources: true,
+          },
+        ]);
+      }
       return;
     }
     prevDiscoveryRef.current = routeKey;
