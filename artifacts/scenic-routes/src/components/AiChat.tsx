@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route, LocateFixed } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -62,6 +62,7 @@ interface ChatMessage {
   mcpActivated?: boolean;
   journeyCard?: boolean;
   locationCard?: boolean;
+  geolocationCard?: boolean;
   discoveryLoadingCard?: { intent: string; city?: string };
   discoveryResultCard?: DiscoveryRouteData;
 }
@@ -81,13 +82,13 @@ interface AiChatProps {
   onDiscoveryResult?: (route: DiscoveryRouteData) => void;
   discoveryRoute?: DiscoveryRouteData | null;
   discoveryLoading?: boolean;
+  onRealLocationUpdate?: (lat: number, lng: number) => void;
 }
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-// v1 is locked to Niagara-on-the-Lake Old Town
-const NOTL_ORIGIN = "Market Square, Niagara-on-the-Lake, ON";
-const NOTL_DESTINATION = "Fort George National Historic Site, Niagara-on-the-Lake, ON";
+// Location intent detection — triggers geolocation card before sending to Claude
+const LOCATION_INTENT = /\b(near me|nearby|around (me|here)|find me|what'?s? (close|near|around)|where (am i|i am)|local|close by|in my area|walking distance|from here|explore here|what can i find|what'?s? around|what'?s? near)\b/i;
 
 function getMerchantEmoji(type: string) {
   switch (type) {
@@ -361,7 +362,7 @@ function PermissionCard({ onEnable, onDismiss }: { onEnable: () => void; onDismi
         </div>
         <div>
           <p style={{ fontSize: 12, fontWeight: 700, color: "#111827", margin: 0 }}>Explore Route MCP</p>
-          <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>Shopify Catalog · NOTL Old Town</p>
+          <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>Connected merchants · your area</p>
         </div>
       </div>
       <p style={{ fontSize: 11, color: "#374151", margin: "0 0 10px", lineHeight: 1.6 }}>
@@ -397,25 +398,79 @@ function McpActivatedCard({ routeContext }: { routeContext: RouteContext | null 
   );
 }
 
-function LocationCard({ onSubmit }: { onSubmit: (location: string, mode: string) => void }) {
+function GeolocationCard({
+  onGrant,
+  onDismiss,
+  onCityFallback,
+}: {
+  onGrant: (lat: number, lng: number) => void;
+  onDismiss: () => void;
+  onCityFallback: (city: string) => void;
+}) {
+  const [cityInput, setCityInput] = useState("");
+  const [requesting, setRequesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGrant = () => {
+    setRequesting(true);
+    setError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setRequesting(false); onGrant(pos.coords.latitude, pos.coords.longitude); },
+      () => { setRequesting(false); setError("Couldn't get your location — try typing a city below."); },
+      { timeout: 10000 }
+    );
+  };
+
   return (
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 16, padding: "14px 16px", marginTop: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-        <Navigation style={{ width: 13, height: 13, color: "#6366f1" }} />
-        <span style={{ fontSize: 12, fontWeight: 700, color: "#111827" }}>Niagara-on-the-Lake Old Town</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 9, background: "linear-gradient(135deg, #6366f1, #8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <LocateFixed style={{ width: 13, height: 13, color: "#fff" }} />
+        </div>
+        <div>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#111827", margin: 0 }}>Where are you right now?</p>
+          <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>Share your location to find what's nearby</p>
+        </div>
       </div>
-      <p style={{ fontSize: 11, color: "#6b7280", margin: "0 0 12px", lineHeight: 1.5 }}>
-        Market Square → Fort George · 3.2 km · ~38 min walk
-      </p>
+      {error && <p style={{ fontSize: 11, color: "#dc2626", margin: "0 0 8px", lineHeight: 1.4 }}>{error}</p>}
       <button
-        onClick={() => onSubmit(NOTL_ORIGIN, "walking")}
+        onClick={handleGrant}
+        disabled={requesting}
         style={{
           width: "100%", padding: "10px 0", borderRadius: 12,
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          color: "#fff", fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer",
+          background: requesting ? "#e5e7eb" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+          color: requesting ? "#9ca3af" : "#fff", fontSize: 12, fontWeight: 700,
+          border: "none", cursor: requesting ? "default" : "pointer",
         }}
       >
-        🗺️ Load the NOTL route →
+        {requesting ? "Getting your location…" : "📍 Use my current location"}
+      </button>
+      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+        <input
+          value={cityInput}
+          onChange={(e) => setCityInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && cityInput.trim()) onCityFallback(cityInput.trim()); }}
+          placeholder="Or type a city (e.g. Kingston, ON)"
+          style={{
+            flex: 1, padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb",
+            fontSize: 12, color: "#374151", outline: "none", background: "#f9fafb",
+          }}
+        />
+        <button
+          onClick={() => cityInput.trim() && onCityFallback(cityInput.trim())}
+          disabled={!cityInput.trim()}
+          style={{
+            padding: "8px 12px", borderRadius: 10, background: cityInput.trim() ? "#111827" : "#e5e7eb",
+            color: cityInput.trim() ? "#fff" : "#9ca3af", fontSize: 12, fontWeight: 600,
+            border: "none", cursor: cityInput.trim() ? "pointer" : "default",
+          }}
+        >Go</button>
+      </div>
+      <button
+        onClick={onDismiss}
+        style={{ marginTop: 8, width: "100%", padding: "6px 0", borderRadius: 10, background: "transparent", color: "#9ca3af", fontSize: 11, border: "none", cursor: "pointer" }}
+      >
+        Maybe later
       </button>
     </div>
   );
@@ -426,7 +481,7 @@ function JourneyStartCard({ routeContext, onStart }: { routeContext: RouteContex
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: "12px 14px", marginTop: 6 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
         <div>
-          <p style={{ fontSize: 11, fontWeight: 700, color: "#111827", margin: "0 0 2px" }}>NOTL Old Town loop</p>
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#111827", margin: "0 0 2px" }}>Route indexed</p>
           <p style={{ fontSize: 10, color: "#9ca3af", margin: 0 }}>
             {routeContext?.distanceKm ?? 3.2} km · {routeContext?.durationMinutes ?? 38} min · 8 merchants indexed
           </p>
@@ -442,12 +497,15 @@ function JourneyStartCard({ routeContext, onStart }: { routeContext: RouteContex
   );
 }
 
-function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocationSubmit, onStart, routeContext }: {
+function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocationSubmit, onStart, routeContext, onGeolocationGrant, onGeolocationDismiss, onCityFallback }: {
   msg: ChatMessage; merchants: Merchant[];
   onFocus?: (id: string) => void;
   onEnable?: () => void; onDismiss?: () => void;
   onLocationSubmit?: (loc: string, mode: string) => void;
   onStart?: () => void; routeContext: RouteContext | null;
+  onGeolocationGrant?: (lat: number, lng: number) => void;
+  onGeolocationDismiss?: () => void;
+  onCityFallback?: (city: string) => void;
 }) {
   const isUser = msg.role === "user";
   return (
@@ -473,7 +531,9 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
         )}
         {msg.permissionCard && onEnable && onDismiss && <PermissionCard onEnable={onEnable} onDismiss={onDismiss} />}
         {msg.mcpActivated && <McpActivatedCard routeContext={routeContext} />}
-        {msg.locationCard && onLocationSubmit && <LocationCard onSubmit={onLocationSubmit} />}
+        {msg.geolocationCard && onGeolocationGrant && onGeolocationDismiss && onCityFallback && (
+          <GeolocationCard onGrant={onGeolocationGrant} onDismiss={onGeolocationDismiss} onCityFallback={onCityFallback} />
+        )}
         {msg.journeyCard && onStart && routeContext && <JourneyStartCard routeContext={routeContext} onStart={onStart} />}
         {msg.merchantCard && <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />}
         {msg.ghostMerchantCard && <UndiscoveredMerchantCard merchant={msg.ghostMerchantCard} />}
@@ -488,7 +548,7 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "a0",
     role: "assistant",
-    content: "You're walking Niagara-on-the-Lake Old Town. I know what's on this loop — what's in stock right now, what's running low, who's worth a stop and why. I'll stay quiet unless the moment's right.",
+    content: "Tell me what you're in the mood for — coffee, wine, something handmade, a farmers market, anything. Or ask what's around you and I'll find what's worth stopping for.",
     timestamp: new Date(),
     skipSources: true,
   },
@@ -513,6 +573,9 @@ export function AiChat({
   const [isStreaming, setIsStreaming] = useState(false);
   const [milestonesFired, setMilestonesFired] = useState<Set<string>>(new Set());
   const [pendingLocation, setPendingLocation] = useState<string | null>(null);
+  const [realLocation, setRealLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const realLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
@@ -526,15 +589,14 @@ export function AiChat({
     }
   }, [messages]);
 
-  // MCP just enabled → inject confirmation + location picker
+  // MCP just enabled → inject confirmation
   useEffect(() => {
     if (!mcpEnabled) return;
     setMessages((prev) => {
       if (prev.some((m) => m.mcpActivated)) return prev;
       return [
         ...prev,
-        { id: "a1", role: "assistant", content: "MCP enabled. Load the route to begin — I'll index the merchants along the loop and surface them as you walk.", timestamp: new Date(), mcpActivated: true, skipSources: true },
-        { id: "loc0", role: "assistant", content: "", timestamp: new Date(), locationCard: true, skipSources: true },
+        { id: "a1", role: "assistant", content: "Connected. Tell me what you're looking for or ask what's around you — I'll find the best stops nearby.", timestamp: new Date(), mcpActivated: true, skipSources: true },
       ];
     });
   }, [mcpEnabled]);
@@ -576,9 +638,10 @@ export function AiChat({
       const t = Date.now();
       const m = merchants[0];
       const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
-      const msg = m.name === "Niagara Home Bakery"
-        ? `Maria's been baking since 4am. Her butter tarts sell out by noon — it's 11:47 now, ${conf != null ? `${conf}% in stock confirmed 40 minutes ago` : "worth stopping early"}.`
-        : `${m.name} is 2 minutes off your path right now${conf != null ? ` — ${conf}% in stock, confirmed recently` : ""}.`;
+      const story = m.story ? m.story.split(".")[0] + "." : null;
+      const msg = story
+        ? `${story}${conf != null ? ` ${conf}% in stock right now.` : ""}`
+        : `${m.name} is just off your path${conf != null ? ` — ${conf}% in stock, confirmed recently` : ""}.`;
       setTimeout(() => inject("m1", [
         { id: `m1a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
         { id: `m1b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
@@ -588,9 +651,8 @@ export function AiChat({
       const t = Date.now();
       const m = merchants[2];
       const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
-      const msg = m.name.includes("Peller")
-        ? `Peller harvested this Icewine at 3am in January when it hit −10°C. ${conf != null ? `${conf}% of the harvest left` : "Limited bottles remaining"} — the weekend crowd hasn't arrived yet.`
-        : `${m.story ? m.story.split(".")[0] + "." : m.name + " is ahead on the route."} ${conf != null ? `${conf}% in stock right now.` : ""}`.trim();
+      const story = m.story ? m.story.split(".")[0] + "." : null;
+      const msg = `${story ?? (m.name + " is ahead.")} ${conf != null ? `${conf}% in stock right now.` : ""}`.trim();
       setTimeout(() => inject("m2", [
         { id: `m2a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
         { id: `m2b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
@@ -599,24 +661,20 @@ export function AiChat({
     if (journeyProgress >= 0.62 && !milestonesFired.has("m3") && merchants[1]) {
       const t = Date.now();
       const m = merchants[1];
-      const msg = m.name.includes("Balzac")
-        ? `Balzac's roasted Monday's Ethiopian single-origin this morning. National award last year. Almost out. A coffee for the last 1.2 km if you want one.`
-        : `${m.story ? m.story.split(".")[0] + "." : m.description.split(".")[0] + "."} ${m.walkMinutes != null ? `${m.walkMinutes} min from here.` : ""}`.trim();
+      const story = m.story ? m.story.split(".")[0] + "." : m.description.split(".")[0] + ".";
+      const msg = `${story}${m.walkMinutes != null ? ` ${m.walkMinutes} min from here.` : ""}`.trim();
       setTimeout(() => inject("m3", [
         { id: `m3a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
         { id: `m3b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
       ]), 400);
     }
-    // Ghost merchant — the undiscovered digital twin
+    // Ghost merchant — undiscovered, no digital presence
     const ghostMerchant = merchants.find((m) => m.isOnShopify === false);
     if (journeyProgress >= 0.70 && !milestonesFired.has("ghost") && ghostMerchant) {
       const t = Date.now();
+      const ghostStory = ghostMerchant.story ?? `${ghostMerchant.name} — no website, no listing, found by a handful of explorers. Worth the detour.`;
       setTimeout(() => inject("ghost", [
-        {
-          id: `ghost-a-${t}`, role: "assistant",
-          content: `Four explorers found a ceramic studio behind 74 Queen St this week. No Google listing, no website — just a handwritten sign on the gate. She's been throwing pots here for 22 years.`,
-          timestamp: new Date(), skipSources: true,
-        },
+        { id: `ghost-a-${t}`, role: "assistant", content: ghostStory, timestamp: new Date(), skipSources: true },
         { id: `ghost-b-${t}`, role: "assistant", content: "", timestamp: new Date(), ghostMerchantCard: ghostMerchant, skipSources: true },
       ]), 500);
     }
@@ -625,9 +683,8 @@ export function AiChat({
       const t = Date.now();
       const m = merchants[3];
       const conf = m.inventoryConfidence != null ? Math.round(m.inventoryConfidence) : null;
-      const msg = m.name.includes("Greaves")
-        ? `Greaves Jams has been made in this kitchen since 1927. Ruth's great-granddaughter runs it now — same copper pot, same lavender honey recipe. ${conf != null ? `${conf}% in stock, confirmed an hour ago.` : ""}`
-        : `${m.story ? m.story.split(".")[0] + "." : m.name} — ${conf != null ? `${conf}% in stock` : "on the route home"}.`;
+      const story = m.story ? m.story.split(".")[0] + "." : m.name;
+      const msg = `${story}${conf != null ? ` ${conf}% in stock.` : ""}`.trim();
       setTimeout(() => inject("m4", [
         { id: `m4a-${t}`, role: "assistant", content: msg, timestamp: new Date(), skipSources: true },
         { id: `m4b-${t}`, role: "assistant", content: "", timestamp: new Date(), merchantCard: m, skipSources: true },
@@ -635,31 +692,51 @@ export function AiChat({
     }
     if (journeyProgress >= 1 && !milestonesFired.has("done")) {
       const t = Date.now();
+      const total = merchants.length;
+      const verified = merchants.filter((m) => m.isOnShopify !== false).length;
+      const ghost = total - verified;
       setTimeout(() => inject("done", [
-        { id: `done1-${t}`, role: "assistant", content: `3.2 km. 8 merchants in the Shopify catalog. One that isn't — yet.`, timestamp: new Date(), skipSources: true },
+        { id: `done1-${t}`, role: "assistant", content: `${total} stops along this walk. ${verified} with real-time availability. ${ghost > 0 ? `${ghost} that aren't connected yet — but worth finding.` : ""}`.trim(), timestamp: new Date(), skipSources: true },
       ]), 600);
     }
   }, [journeyProgress, journeyStarted, mcpEnabled, merchants, milestonesFired]);
 
-  const handleLocationSubmit = useCallback((_location: string, mode: string) => {
-    // v1 is locked to NOTL — always load the same loop
-    setPendingLocation("Niagara-on-the-Lake Old Town");
-    setMessages((prev) => prev.map((m) => m.locationCard ? { ...m, locationCard: false } : m));
-    setMessages((prev) => [...prev, {
-      id: "a-loading",
-      role: "assistant",
-      content: "Mapping the NOTL Old Town walking loop…",
-      timestamp: new Date(),
-      skipSources: true,
-    }]);
-    onRouteRequest(NOTL_ORIGIN, NOTL_DESTINATION, mode);
-  }, [onRouteRequest]);
+  // Ref so geolocation handlers can call sendMessage before it appears in the closure chain
+  const sendMessageRef = useRef<((text: string, locOverride?: { lat: number; lng: number } | null, cityHint?: string) => Promise<void>) | null>(null);
+
+  const handleGeolocationGrant = useCallback((lat: number, lng: number) => {
+    const loc = { lat, lng };
+    realLocationRef.current = loc;
+    setRealLocation(loc);
+    setMessages((prev) => prev.filter((m) => !m.geolocationCard));
+    setPendingMessage((prev) => {
+      if (prev) {
+        const msg = prev;
+        setTimeout(() => sendMessageRef.current?.(msg, loc), 50);
+      }
+      return null;
+    });
+  }, []);
+
+  const handleGeolocationDismiss = useCallback(() => {
+    setMessages((prev) => prev.filter((m) => !m.geolocationCard));
+    setPendingMessage(null);
+  }, []);
+
+  const handleCityFallback = useCallback((city: string) => {
+    setMessages((prev) => prev.filter((m) => !m.geolocationCard));
+    setPendingMessage((prev) => {
+      const msg = prev ?? `What's worth stopping for in ${city}?`;
+      setTimeout(() => sendMessageRef.current?.(msg, null, city), 50);
+      return null;
+    });
+  }, []);
 
   const handleEnable = useCallback(() => { onMcpEnable(); }, [onMcpEnable]);
   const handleDismiss = useCallback(() => {
     setMessages((prev) => [
       ...prev.filter((m) => !m.permissionCard),
-      { id: "dismiss1", role: "assistant", content: "No worries — you can enable Explore Route any time by asking me.", timestamp: new Date(), skipSources: true },
+      { id: "dismiss1", role: "assistant", content: "Sure — just ask me anything when you're ready.", timestamp: new Date(), skipSources: true },
     ]);
   }, []);
 
@@ -714,10 +791,27 @@ export function AiChat({
 
 
 
-  const sendMessage = useCallback(async (text?: string) => {
+  const sendMessage = useCallback(async (text?: string, locOverride?: { lat: number; lng: number } | null, cityHint?: string) => {
     const content = (text ?? input).trim();
     if (!content || isStreaming) return;
     setInput("");
+
+    // Effective location: explicit override → browser geolocation → simulated journey position
+    const effectiveLoc: { lat: number; lng: number } | null =
+      locOverride !== undefined ? locOverride
+      : realLocationRef.current ?? (userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : null);
+
+    // Location intent detected and no location available → show geolocation card, hold message
+    if (LOCATION_INTENT.test(content) && !effectiveLoc) {
+      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
+      setPendingMessage(content);
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        { id: `geo-${Date.now()}`, role: "assistant" as const, content: "To find what's around you, I need to know where you are.", timestamp: new Date(), geolocationCard: true, skipSources: true },
+      ]);
+      return;
+    }
 
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
@@ -733,10 +827,10 @@ export function AiChat({
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,
         body: JSON.stringify({
-          content,
+          content: cityHint ? `${content} (location hint: ${cityHint})` : content,
           routeContext,
           merchantContext: merchants.map((m) => ({ id: m.id, name: m.name, type: m.type, address: m.address, description: m.description, rating: m.rating, walkMinutes: m.walkMinutes })),
-          userPosition,
+          userPosition: effectiveLoc ?? userPosition,
         }),
       });
 
@@ -835,12 +929,15 @@ export function AiChat({
     } finally {
       setIsStreaming(false);
     }
-  }, [input, isStreaming, merchants, routeContext, userPosition, onDiscoveryResult]);
+  }, [input, isStreaming, merchants, routeContext, userPosition, onDiscoveryResult, realLocation]);
+
+  // Keep ref updated so geolocation handlers can call it before it's in their closure
+  sendMessageRef.current = sendMessage;
 
   const hasRoute = !!routeContext;
   const suggestedPrompts = hasRoute
-    ? ["What's running low today?", "Tell me about the ceramic studio", "What's worth stopping for right now?"]
-    : [];
+    ? ["What's running low today?", "Any hidden gems nearby?", "What's worth stopping for right now?"]
+    : ["What's around me?", "Find me a coffee spot", "What's happening this weekend?"];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: "#f5f5f7" }}>
@@ -874,7 +971,10 @@ export function AiChat({
           <MessageBubble
             key={msg.id} msg={msg} merchants={merchants}
             onFocus={onMerchantFocus} onEnable={handleEnable} onDismiss={handleDismiss}
-            onLocationSubmit={handleLocationSubmit} onStart={onStartJourney} routeContext={routeContext}
+            onLocationSubmit={() => {}} onStart={onStartJourney} routeContext={routeContext}
+            onGeolocationGrant={handleGeolocationGrant}
+            onGeolocationDismiss={handleGeolocationDismiss}
+            onCityFallback={handleCityFallback}
           />
         ))}
         <div ref={bottomRef} />
@@ -916,7 +1016,7 @@ export function AiChat({
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
             onFocus={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#a5b4fc"; }}
             onBlur={(e) => { (e.currentTarget.parentElement as HTMLDivElement).style.borderColor = "#e5e7eb"; }}
-            placeholder={mcpEnabled ? (hasRoute ? "Ask about anything on the loop…" : "Route indexing…") : "Ask Claude anything…"}
+            placeholder="Ask what's nearby, what to do, or where to go…"
             disabled={isStreaming}
             style={{ flex: 1, border: "none", background: "transparent", fontSize: 13, color: "#111827", outline: "none" }}
           />

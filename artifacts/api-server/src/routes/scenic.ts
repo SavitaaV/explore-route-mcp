@@ -370,7 +370,7 @@ const ONTARIO_MOCK_MERCHANTS = [
 
 async function fetchScenicRoute(origin: string, destination: string, mode: string = "walking") {
   if (!GOOGLE_MAPS_API_KEY) {
-    logger.info("No Google Maps API key — returning mock NOTL walking route");
+    logger.info("No Google Maps API key — returning mock walking route");
     return { ...MOCK_ROUTE, mode };
   }
 
@@ -415,7 +415,7 @@ async function fetchScenicRoute(origin: string, destination: string, mode: strin
 
 async function fetchNearbyMerchants(lat: number, lng: number, radius: number = 800, type: string = "all") {
   if (!GOOGLE_MAPS_API_KEY) {
-    logger.info("No Google Maps API key — returning mock NOTL merchants");
+    logger.info("No Google Maps API key — returning mock merchants");
     const filtered = type === "all" ? MOCK_MERCHANTS : MOCK_MERCHANTS.filter((m) => m.type === type);
     return filtered;
   }
@@ -514,7 +514,7 @@ const CURATED_PRODUCTS: Record<string, Array<{ id: string; title: string; price:
     { id: "a2", title: "Local Honey Collection", price: "$22.00 CAD", imageUrl: "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?w=400", checkoutUrl: "https://shopify.dev/docs/agents" },
   ],
   boutique: [
-    { id: "bt1", title: "NOTL Souvenir Set", price: "$35.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
+    { id: "bt1", title: "Local Artisan Souvenir Set", price: "$35.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
     { id: "bt2", title: "Local Artisan Print", price: "$55.00 CAD", imageUrl: null, checkoutUrl: "https://shopify.dev/docs/agents" },
   ],
 };
@@ -586,13 +586,13 @@ router.post("/merchant-card", async (req, res) => {
       id: merchantId,
       name: merchantName,
       type: merchantType ?? "boutique",
-      lat: 43.2553,
-      lng: -79.0712,
-      address: "Queen St, Niagara-on-the-Lake, ON",
+      lat: 0,
+      lng: 0,
+      address: "",
       rating: 4.5,
       distanceFromRouteKm: 0.1,
       photoUrl: "https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=400",
-      description: `Local ${merchantType ?? "shop"} in NOTL Old Town.`,
+      description: `Local ${merchantType ?? "shop"}.`,
       isOpen: true,
       walkMinutes: 2,
     };
@@ -1599,7 +1599,7 @@ export async function computePlanDiscovery(params: {
     if (!geocoded) throw new Error(`Could not geocode city: "${city}"`);
     centre = geocoded;
   } else {
-    centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
+    throw new Error("No location provided — include lat/lng coordinates or a city name");
   }
 
   if (!GOOGLE_MAPS_API_KEY) {
@@ -1829,9 +1829,8 @@ router.get("/plan-discovery-route", async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    req.log.warn({ err }, "plan-discovery-route: error, falling back to mock");
-    const centre = { lat: 43.2553, lng: -79.0712, name: "Niagara-on-the-Lake Old Town, ON" };
-    res.json(buildMockDiscoveryRoute(intent.trim(), centre));
+    req.log.warn({ err }, "plan-discovery-route: error");
+    res.status(400).json({ error: err instanceof Error ? err.message : "Could not compute route — provide a city name or lat/lng coordinates." });
   }
 });
 
@@ -1841,12 +1840,12 @@ router.get("/mcp-tools", (_req, res) => {
     {
       name: "get_scenic_route",
       description:
-        "Get a walking or biking route within Niagara-on-the-Lake Old Town. Returns a ~3km loop from Market Square through Fort George, the waterfront, and Queen Street with encoded polyline, distance, and duration.",
+        "Get a walking or cycling route between two points. Returns encoded polyline, distance, estimated duration, and waypoints.",
       inputSchema: {
         type: "object",
         properties: {
-          origin: { type: "string", description: "Start location (e.g. 'Market Square, NOTL')" },
-          destination: { type: "string", description: "End location (e.g. 'Fort George, NOTL')" },
+          origin: { type: "string", description: "Start location (address or landmark)" },
+          destination: { type: "string", description: "End location (address or landmark)" },
           mode: { type: "string", enum: ["walking", "bicycling"], description: "Travel mode" },
         },
         required: ["origin", "destination"],
@@ -1855,7 +1854,7 @@ router.get("/mcp-tools", (_req, res) => {
     {
       name: "get_nearby_merchants",
       description:
-        "Discover independent merchants within walking distance in NOTL Old Town (artisan shops, cafés, bakeries, wineries, boutiques). Returns Shopify-linked merchant cards with one-tap checkout for each.",
+        "Discover independent local merchants near a location (artisan shops, cafés, bakeries, wineries, boutiques). Returns Shopify-linked merchant cards with availability signals.",
       inputSchema: {
         type: "object",
         properties: {

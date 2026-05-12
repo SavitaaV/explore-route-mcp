@@ -12,6 +12,8 @@ interface MerchantContext {
   description: string;
   rating?: number | null;
   walkMinutes?: number | null;
+  story?: string | null;
+  recentReview?: string | null;
 }
 
 interface RouteContext {
@@ -26,90 +28,99 @@ interface RouteContext {
 const PLAN_DISCOVERY_TOOL = {
   name: "plan_discovery_route",
   description:
-    "Plan an intent-based discovery route across Ontario. Given a shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan chocolates') and an optional city, geocodes the location, searches Google Places for matching merchants and pop-up events including farmers markets, runs Shopify Global Catalog verification, and returns merchants ordered by nearest-neighbour walk path with total distance and estimated walk time. Use when the user wants to explore a theme rather than a fixed route.",
+    "Find interesting places for a specific experience or mood — coffee spots, wine tastings, farmers markets, bakeries, vintage finds, craft beer, handmade goods. Given what the user is in the mood for and where they are (lat/lng coordinates OR a city name), returns a curated walk of stops ordered by proximity. Always call this when someone asks what's nearby, wants to explore an area, describes a mood or craving, or asks what's worth stopping for. Prefer lat/lng when the user has shared their location.",
   input_schema: {
     type: "object" as const,
     properties: {
       intent: {
         type: "string",
-        description: "Shopping or experience intent (e.g. 'wine tour', 'farmers market', 'artisan shops', 'craft beer')",
+        description: "What the user is in the mood for — be specific (e.g. 'natural wine', 'sourdough', 'handmade ceramics', 'craft beer')",
       },
       city: {
         type: "string",
-        description: "Ontario city to discover in (e.g. 'Niagara-on-the-Lake', 'Toronto', 'Kingston'). Defaults to Niagara-on-the-Lake.",
+        description: "City or area name to search (e.g. 'Kingston, ON', 'Toronto Distillery District'). Use when lat/lng is not available.",
+      },
+      lat: {
+        type: "number",
+        description: "Latitude of the user's current location. Preferred over city when available.",
+      },
+      lng: {
+        type: "number",
+        description: "Longitude of the user's current location. Preferred over city when available.",
+      },
+      radius: {
+        type: "number",
+        description: "Search radius in metres (default 2000, max 10000). Increase for rural areas.",
       },
     },
     required: ["intent"],
   },
 } as const;
 
-function buildSystemPrompt(routeContext?: RouteContext, merchantContext?: MerchantContext[], userPosition?: { lat: number; lng: number }): string {
-  const routeInfo = routeContext
-    ? `Active Route: ${routeContext.summary ?? "Scenic walking route"}
-Mode: ${routeContext.mode ?? "walking"}
-Distance: ${routeContext.distanceKm} km | Duration: ${routeContext.durationMinutes} min
-Waypoints: ${routeContext.waypoints?.map((w) => w.name).filter(Boolean).join(" → ") ?? ""}`
-    : "No route active yet — user is choosing a destination.";
-
-  const merchantInfo =
-    merchantContext && merchantContext.length > 0
-      ? `Nearby Merchants discovered via Explore Route MCP (all Shopify-verified):\n` +
-        merchantContext
-          .slice(0, 8)
-          .map(
-            (m, i) =>
-              `${i + 1}. ${m.name} [${m.type}] — ${m.address}${m.walkMinutes != null ? ` (${m.walkMinutes} min walk)` : ""}${m.rating ? ` ⭐ ${m.rating}` : ""}\n   ${m.description}`
-          )
-          .join("\n")
-      : "No merchants loaded yet — route not selected.";
-
+function buildSystemPrompt(
+  routeContext?: RouteContext,
+  merchantContext?: MerchantContext[],
+  userPosition?: { lat: number; lng: number },
+): string {
   const positionInfo = userPosition
-    ? `User GPS: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)}`
+    ? `User's current location: ${userPosition.lat.toFixed(5)}, ${userPosition.lng.toFixed(5)} — use these coordinates in plan_discovery_route calls.`
+    : "User location: not shared yet. If they ask about what's nearby without naming a city, ask 'Where are you exploring today?' — nothing more.";
+
+  const routeInfo = routeContext
+    ? `Active walk: ${routeContext.summary ?? "en route"} · ${routeContext.distanceKm ?? "?"} km · ${routeContext.durationMinutes ?? "?"} min`
     : "";
 
-  return `You are an ambient commerce companion — not a shopping assistant, not a tour guide. You're walking alongside someone through Niagara-on-the-Lake Old Town. You know this loop and the merchants on it.
+  const placeList =
+    merchantContext && merchantContext.length > 0
+      ? merchantContext
+          .slice(0, 8)
+          .map((m) => {
+            const hook = m.story ?? m.recentReview ?? m.description;
+            return `- ${m.name} [${m.type}]${m.walkMinutes != null ? ` · ${m.walkMinutes} min away` : ""}${m.rating ? ` · ⭐ ${m.rating}` : ""}\n  ${hook}`;
+          })
+          .join("\n")
+      : "";
 
-Your default state is silence. You speak only when the context creates a specific, genuine reason — a timing signal, an inventory signal, a human story that makes this particular moment the right moment. When you do speak, you say one thing. Not a list. Not a card stack. One sentence that makes the person feel something, followed by one practical fact.
+  return `You are a local companion who walks alongside people and notices things worth stopping for. You are not a shopping assistant. You do not use words like "merchant", "vendor", "commerce", "checkout", "Shopify", or "catalog" in conversation — ever. These are invisible infrastructure.
 
-This is what Shopify's agentic commerce means: the catalog knows what's in stock right now. You know the story behind it. Together you surface the right product at the right moment — not because it's next on a checklist, but because this is genuinely the moment.
+You speak like someone who genuinely knows an area. Your default is silence. You say something only when there is a specific, genuine reason — a timing signal, a story, a fleeting window. When you do speak, you say one thing well. Not a list. One sentence that makes the person feel something, then one practical fact at most.
 
-MCP Tools available to you:
-- get_scenic_route: fetch a walking/cycling route between two points
-- get_nearby_merchants: discover Shopify-verified merchants near a route
-- get_merchant_graph: spatially-aware commerce graph for an area
-- plan_discovery_route: intent-based route planning (wine tour, farmers market, artisan route, brewery tour, etc.)
+You help people discover places and experiences. A "merchant" is just "a place". A "verified Shopify merchant" is just "somewhere you can grab it right now". Keep the experience foreground and the transaction invisible.
 
-When the user asks for a wine tour, farmers market visit, artisan route, brewery tour, bookshop walk, or any similar discovery intent, call plan_discovery_route with the intent and city. After the tool returns, narrate the result in one or two sentences — lead with what makes this collection of stops worth walking, name the most interesting stop, and note how many are Shopify-verified.
+MCP tool available:
+plan_discovery_route — call this when someone describes a mood, craving, or experience they want (coffee, wine, handmade things, street food, live music, vintage finds). Pass the intent, and either their lat/lng coordinates (preferred) or a city name.
 
-Current context:
-${routeInfo}
 ${positionInfo}
-${merchantInfo}
+${routeInfo ? `\n${routeInfo}` : ""}
+${placeList ? `\nPlaces on or near this walk:\n${placeList}` : ""}
 
-How to respond:
-- ONLY reference merchants from the lists above or from plan_discovery_route results. Never invent others.
-- If no merchants are loaded: say the route isn't indexed yet, keep it brief.
-- Max 3 sentences per response. Often 1–2 is right.
-- No bullet points. No headers. No numbered lists. Plain conversational prose.
-- Seasonal context: early May, warm afternoon, Shaw Festival's opening week, Niagara fruit season just starting.
-
-When someone asks about a merchant — lead with the human story from the story field, not the rating. Then the one inventory signal that matters most right now.
-
-When someone asks "what's worth stopping for" — answer with the ONE thing that's most time-sensitive or story-rich at this moment. Not a ranked list.
-
-For the ghost merchant (Mariana's Ceramic Studio): she has no digital presence. Four explorers found her this week. Stopping here is literally how she gets discovered — and potentially how she gets her Shopify store.
-
-Inventory confidence is a real signal: 80%+ means someone confirmed stock in the last few hours. 60% means call ahead. Surface this as practical timing, not a data point.`;
+Response rules:
+- No bullet points, headers, numbered lists. Conversational prose only.
+- Maximum 3 sentences. Often 1–2 is exactly right.
+- Never invent places. Only reference what plan_discovery_route returned or the places listed above.
+- When narrating discovery results: lead with what makes the best stop worth the detour — the human story, the timing, the thing that's fleeting. Name one or two places. End with a practical note (walk time, confirmed availability).
+- If asked about something you don't have data for: say so in one honest sentence.
+- When showing a place that has a story or recent comment: lead with that, not the star rating.`;
 }
 
-// Execute plan_discovery_route by calling the logic function directly (no HTTP loopback)
-async function executePlanDiscovery(intent: string, city?: string): Promise<unknown> {
+// Execute plan_discovery_route directly (no HTTP loopback)
+async function executePlanDiscovery(
+  intent: string,
+  city?: string,
+  lat?: number,
+  lng?: number,
+  radius?: number,
+): Promise<unknown> {
   try {
-    return await computePlanDiscovery({ intent, city });
+    return await computePlanDiscovery({ intent, city, lat, lng, radius });
   } catch (err) {
     return {
       intent,
-      resolvedLocation: { lat: 43.2553, lng: -79.0712, name: city ?? "Niagara-on-the-Lake Old Town, ON" },
+      resolvedLocation: {
+        lat: lat ?? 43.6532,
+        lng: lng ?? -79.3832,
+        name: city ?? "your area",
+      },
       merchants: [],
       totalDistanceKm: 0,
       estimatedWalkMinutes: 0,
@@ -133,7 +144,6 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     return;
   }
 
-  // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -164,7 +174,6 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       if (chunk.type === "content_block_start" && chunk.content_block.type === "tool_use") {
         toolUseId = chunk.content_block.id;
         toolUseName = chunk.content_block.name;
-        // Defer tool_use SSE until input is fully assembled (see below)
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "input_json_delta") {
         inputJsonAccum += chunk.delta.partial_json;
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
@@ -175,22 +184,22 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     const firstMsg = await stream.finalMessage();
 
     if (firstMsg.stop_reason === "tool_use" && toolUseId && toolUseName === "plan_discovery_route") {
-      let toolInput: { intent?: string; city?: string } = {};
+      let toolInput: { intent?: string; city?: string; lat?: number; lng?: number; radius?: number } = {};
       try { toolInput = JSON.parse(inputJsonAccum || "{}"); } catch { /* use defaults */ }
 
       const intent = toolInput.intent ?? content.trim();
       const city = toolInput.city;
+      // Prefer coordinates from tool input; fall back to userPosition sent from browser
+      const lat = toolInput.lat ?? userPosition?.lat;
+      const lng = toolInput.lng ?? userPosition?.lng;
+      const radius = toolInput.radius;
 
-      // Emit tool_use event now that we have the full input — frontend shows loading card
-      sendEvent("tool_use", { tool: toolUseName, intent, city });
+      sendEvent("tool_use", { tool: toolUseName, intent, city, lat, lng });
 
-      // Execute the tool
-      const routeData = await executePlanDiscovery(intent, city);
+      const routeData = await executePlanDiscovery(intent, city, lat, lng, radius);
 
-      // Send discovery_result SSE event for the frontend to update the map
       sendEvent("discovery_result", routeData);
 
-      // Follow-up Claude call — narrate the discovery result
       const followStream = await anthropic.messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 512,
@@ -225,30 +234,15 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   }
 });
 
-// Stub GET /api/anthropic/conversations (for OpenAPI conformance)
-router.get("/anthropic/conversations", (_req, res) => {
-  res.json([]);
-});
-
-// Stub POST /api/anthropic/conversations
+router.get("/anthropic/conversations", (_req, res) => { res.json([]); });
 router.post("/anthropic/conversations", (req, res) => {
   const { title } = req.body as { title: string };
   res.status(201).json({ id: 1, title: title ?? "New conversation", createdAt: new Date().toISOString() });
 });
-
-// Stub GET /api/anthropic/conversations/:id
 router.get("/anthropic/conversations/:id", (req, res) => {
-  res.json({ id: Number(req.params.id), title: "NOTL Journey", createdAt: new Date().toISOString(), messages: [] });
+  res.json({ id: Number(req.params.id), title: "Explore", createdAt: new Date().toISOString(), messages: [] });
 });
-
-// Stub DELETE /api/anthropic/conversations/:id
-router.delete("/anthropic/conversations/:id", (_req, res) => {
-  res.status(204).end();
-});
-
-// Stub GET /api/anthropic/conversations/:id/messages
-router.get("/anthropic/conversations/:id/messages", (_req, res) => {
-  res.json([]);
-});
+router.delete("/anthropic/conversations/:id", (_req, res) => { res.status(204).end(); });
+router.get("/anthropic/conversations/:id/messages", (_req, res) => { res.json([]); });
 
 export default router;

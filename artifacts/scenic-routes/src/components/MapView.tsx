@@ -65,11 +65,12 @@ declare global {
   }
 }
 
-// Fallback waypoints (used only if route has no encoded polyline + geometry library unavailable)
+// Fallback waypoints — two generic points so the SVG path has something to render
+// before any real route arrives; replaced immediately once route data loads
 const FALLBACK_WAYPOINTS = [
-  { lat: 43.2553, lng: -79.0712 },
-  { lat: 43.2617, lng: -79.058 },
-  { lat: 43.2553, lng: -79.0712 },
+  { lat: 0.001, lng: 0 },
+  { lat: 0, lng: 0.001 },
+  { lat: -0.001, lng: 0 },
 ];
 
 function getMerchantTypeIcon(type: string) {
@@ -162,17 +163,6 @@ function SvgMapPlaceholder({
         </defs>
         <rect width="800" height="500" fill="url(#terrain)" />
 
-        {/* Lake Ontario to the north */}
-        <rect x="0" y="0" width="800" height="60" fill="rgba(59,130,246,0.18)" rx="0" />
-        <text x="20" y="38" fill="rgba(147,197,253,0.6)" fontSize="13" fontFamily="sans-serif" fontWeight="600">Lake Ontario</text>
-
-        {/* Niagara River to the east */}
-        <rect x="745" y="0" width="55" height="500" fill="rgba(59,130,246,0.15)" />
-        <text x="748" y="260" fill="rgba(147,197,253,0.5)" fontSize="10" fontFamily="sans-serif" transform="rotate(90 748 260)">Niagara River</text>
-
-        {/* Queen Street label */}
-        <text x="380" y="270" fill="rgba(255,255,255,0.45)" fontSize="11" fontFamily="sans-serif" fontWeight="500">Queen Street</text>
-
         {/* Scenic route — dashed background */}
         <path d={pathD} stroke="rgba(255,255,255,0.1)" strokeWidth="10" fill="none" strokeLinecap="round" strokeLinejoin="round" />
 
@@ -201,23 +191,10 @@ function SvgMapPlaceholder({
           />
         )}
 
-        {/* Waypoint labels */}
-        {[
-          { lat: 43.2553, lng: -79.0712, label: "Market Square ★" },
-          { lat: 43.2617, lng: -79.058, label: "Fort George" },
-          { lat: 43.2627, lng: -79.066, label: "Waterfront" },
-          { lat: 43.2554, lng: -79.0733, label: "Shaw Festival" },
-        ].map(({ lat, lng, label }) => {
-          const { x, y } = mapToSVG(lat, lng);
-          return (
-            <g key={label}>
-              <circle cx={x} cy={y} r="4" fill="white" opacity="0.7" />
-              <text x={x + 7} y={y + 4} fill="rgba(255,255,255,0.75)" fontSize="9" fontFamily="sans-serif" fontWeight="600">
-                {label}
-              </text>
-            </g>
-          );
-        })}
+        {/* Route waypoint dots — derived from actual route, no hardcoded labels */}
+        {routePoints.filter((_, i) => i % Math.max(1, Math.floor(routePoints.length / 4)) === 0).map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="white" opacity="0.5" />
+        ))}
 
         {/* Walker marker */}
         {journeyStarted && carX && carY && (
