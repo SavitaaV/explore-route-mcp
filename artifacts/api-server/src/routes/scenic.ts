@@ -602,8 +602,8 @@ router.post("/merchant-card", async (req, res) => {
     const type = merchantType ?? "boutique";
     let catalogProducts: CatalogProduct[] = [];
 
-    // Only query the catalog for verified Shopify merchants — ghost merchants are not in the catalog
-    if (shopifyStatus !== "ghost") {
+    // Only query the catalog for explicitly verified Shopify merchants
+    if (shopifyStatus === "verified") {
       // 1. Domain-first search: verified merchants have a real Shopify checkoutUrl from discovery.
       //    Searching by shop domain (e.g. "peller.com") is more precise than by name.
       if (incomingCheckoutUrl) {
