@@ -727,6 +727,7 @@ interface PlacesResult {
   rating?: number;
   user_ratings_total?: number;
   opening_hours?: { open_now?: boolean; weekday_text?: string[] };
+  business_status?: string;
   vicinity?: string;
 }
 
@@ -1605,8 +1606,11 @@ function buildMockDiscoveryRoute(
     },
   ];
 
-  // Merge event stops into ordered list (cap total at 8)
-  const allMerchants = [...ordered.slice(0, 6), ...mockEvents];
+  // Only inject mock events when the intent is market/event-related, to preserve intent relevance
+  const isEventIntent = /market|event|festival|fair|pop.?up|farmer/i.test(intent);
+  const allMerchants = isEventIntent
+    ? [...ordered.slice(0, 6), ...mockEvents]
+    : ordered.slice(0, 8);
 
   // Total walking distance along the NN path
   let totalM = 0;
@@ -1852,7 +1856,9 @@ export async function computePlanDiscovery(params: {
       shopifyStatus: d.shopifyStatus,
       isEvent: p.isEvent,
       chainTier: d.chainTier,
-      openNow: p.opening_hours?.open_now ?? null,
+      // Use open_now when available; fall back to business_status as a coarser availability signal
+      openNow: p.opening_hours?.open_now
+        ?? (p.business_status === "CLOSED_TEMPORARILY" || p.business_status === "CLOSED_PERMANENTLY" ? false : null),
       photoUrl: null as string | null,
       checkoutUrl: d.checkoutUrl,
       ...(operatingSeason ? { operatingSeason } : {}),

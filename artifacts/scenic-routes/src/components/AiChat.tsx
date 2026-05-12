@@ -424,13 +424,15 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
                 </div>
               )}
 
-              {/* Weekday hours from Place Details (show Sat/Sun only for events, all for markets) */}
+              {/* Weekday hours from Place Details:
+                  farmer_market → show Sat/Sun lines only (typically open weekends)
+                  other events → show up to 3 weekday lines (may operate any day) */}
               {m.weekdayText && m.weekdayText.length > 0 && (
                 <div style={{ fontSize: 9, color: "#6b7280", lineHeight: 1.6, marginBottom: 5, paddingLeft: 15 }}>
                   {(m.type === "farmer_market"
                     ? m.weekdayText.filter((l) => /saturday|sunday/i.test(l))
-                    : m.weekdayText
-                  ).slice(0, 3).map((line, i) => (
+                    : m.weekdayText.slice(0, 3)
+                  ).map((line, i) => (
                     <div key={i}>{line}</div>
                   ))}
                 </div>
