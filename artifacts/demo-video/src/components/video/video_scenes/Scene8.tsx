@@ -4,9 +4,9 @@ import { useVoiceover } from '@/lib/video/useVoiceover';
 import { NotlMap, WatchCard, SplitLayout, ClaudeBubble, MerchantCard, Caption } from './shared';
 
 const VOICEOVER =
-  "First stop: Wick'd Wax, a Shopify candle merchant 3 minutes off route. Inventory is live. Priya can pre-order before she arrives.";
+  'Second stop: Lakeside Pottery. Ron and Barb have been throwing stoneware by hand since 1989. No website. No online store. Completely invisible to agentic commerce — until now.';
 
-export function Scene6() {
+export function Scene8() {
   const { muted } = useVideoContext();
   useVoiceover(VOICEOVER, muted);
 
@@ -19,35 +19,33 @@ export function Scene6() {
       transition={{ duration: 0.7 }}
     >
       <SplitLayout
-        mapContent={<NotlMap showRoute showWickd showLakeside wickdPulse />}
+        mapContent={<NotlMap showRoute showWickd showLakeside />}
         watchContent={
           <div className="w-full h-full flex items-center justify-center px-3">
             <WatchCard
-              emoji="🕯"
-              title="Wick'd Wax · 3 min detour"
-              subtitle="94% in stock · Shopify verified"
-              action="[Stop Here →]"
-              delay={1.2}
+              emoji="🏺"
+              title="Lakeside Pottery · On your route"
+              subtitle="Handmade stoneware since 1989"
+              action="[Add Stop]"
+              delay={1.0}
             />
           </div>
         }
         chatContent={
           <div className="flex flex-col gap-2.5">
-            <ClaudeBubble delay={0.2}>Found 2 merchants along your route.</ClaudeBubble>
+            <ClaudeBubble delay={0.2}>Here's the second stop along your route:</ClaudeBubble>
             <ClaudeBubble delay={0.6}>
               <MerchantCard
-                emoji="🕯"
-                name="Wick'd Wax ~ The Candle Shoppe"
-                tagline="Shopify merchant · St. Davids, ON"
+                emoji="🏺"
+                name="Lakeside Pottery"
+                tagline="Ron & Barb Zimmermann · Since 1989"
                 meta={[
-                  'Seasonal Harvest Collection — Soy candles',
-                  'Inventory: 94% in stock · verified today',
-                  'Distance: 3 min off your route',
-                  '⭐ 4.9 · 127 reviews',
+                  'On your route · Open weekends',
+                  'Google Places · No online store',
+                  '⭐ 4.8 · 89 visitor reviews',
                 ]}
-                actionLabel="Add to Route"
-                actionLabel2="Pre-order via Shopify →"
-                borderColor="border-orange-900/50"
+                actionLabel="Add as Stop"
+                borderColor="border-gray-700"
                 delay={0}
               />
             </ClaudeBubble>

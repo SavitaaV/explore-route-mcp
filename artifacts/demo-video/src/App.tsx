@@ -1,5 +1,10 @@
 import VideoWithControls from "@/components/video/VideoWithControls";
+import { VideoProvider } from "@/lib/video/VideoContext";
 
 export default function App() {
-  return <VideoWithControls />;
+  return (
+    <VideoProvider>
+      <VideoWithControls />
+    </VideoProvider>
+  );
 }

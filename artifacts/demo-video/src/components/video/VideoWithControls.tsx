@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Repeat } from 'lucide-react';
+import { ChevronDown, ChevronUp, Repeat, Volume2, VolumeX } from 'lucide-react';
 import VideoTemplate, { SCENE_DURATIONS } from './VideoTemplate';
 import { useSceneControls } from './useSceneControls';
+import { useVideoContext } from '@/lib/video/VideoContext';
 
 const PROGRESS_TICK_MS = 60;
 
@@ -9,11 +10,13 @@ interface ControlBarProps {
   visible: boolean;
   collapsed: boolean;
   locked: boolean;
+  muted: boolean;
   sceneKeys: string[];
   activeIndex: number;
   activeDuration: number;
   tick: number;
   onToggleLock: () => void;
+  onToggleMuted: () => void;
   onJumpTo: (index: number) => void;
   onToggleCollapsed: () => void;
 }
@@ -48,7 +51,8 @@ function ProgressSegments({
     <div className="flex-1 flex items-center gap-1.5">
       {sceneKeys.map((key, i) => {
         const isActive = i === activeIndex;
-        const fill = isActive ? progress * 100 : 0;
+        const isDone = i < activeIndex;
+        const fill = isActive ? progress * 100 : isDone ? 100 : 0;
         return (
           <button
             key={key}
@@ -72,11 +76,13 @@ function ControlBar({
   visible,
   collapsed,
   locked,
+  muted,
   sceneKeys,
   activeIndex,
   activeDuration,
   tick,
   onToggleLock,
+  onToggleMuted,
   onJumpTo,
   onToggleCollapsed,
 }: ControlBarProps) {
@@ -101,6 +107,20 @@ function ControlBar({
         aria-pressed={locked}
       >
         <Repeat className="w-8 h-8" />
+      </button>
+
+      <button
+        onClick={onToggleMuted}
+        className={`w-14 h-14 flex items-center justify-center transition-colors rounded-lg shrink-0 ${
+          muted
+            ? 'text-white/40 bg-white/10 hover:bg-white/15'
+            : 'text-white hover:bg-white/10'
+        }`}
+        title={muted ? 'Unmute voiceover' : 'Mute voiceover'}
+        aria-label={muted ? 'Unmute voiceover' : 'Mute voiceover'}
+        aria-pressed={muted}
+      >
+        {muted ? <VolumeX className="w-8 h-8" /> : <Volume2 className="w-8 h-8" />}
       </button>
 
       <div className="w-px self-stretch bg-white/15" aria-hidden="true" />
@@ -132,6 +152,7 @@ function ControlBar({
 
 export default function VideoWithControls() {
   const isIframed = typeof window !== 'undefined' && window.self !== window.top;
+  const { muted, toggleMuted } = useVideoContext();
 
   const {
     sceneKeys,
@@ -187,14 +208,28 @@ export default function VideoWithControls() {
 
   const barVisible = !collapsed || hovering || tapPinned;
 
-  if (!isIframed) return <VideoTemplate />;
+  if (!isIframed) {
+    return (
+      <div className="relative w-full h-screen">
+        <VideoTemplate loop={false} />
+        <button
+          onClick={toggleMuted}
+          className="absolute top-4 right-4 z-50 w-10 h-10 flex items-center justify-center bg-black/50 backdrop-blur rounded-full text-white/70 hover:text-white hover:bg-black/70 transition-colors"
+          title={muted ? 'Unmute voiceover' : 'Mute voiceover'}
+          aria-label={muted ? 'Unmute voiceover' : 'Mute voiceover'}
+        >
+          {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-screen">
       <VideoTemplate
         key={mountKey}
         durations={durations}
-        loop
+        loop={false}
         onSceneChange={onSceneChange}
       />
       <div
@@ -210,11 +245,13 @@ export default function VideoWithControls() {
           visible={barVisible}
           collapsed={collapsed}
           locked={locked}
+          muted={muted}
           sceneKeys={sceneKeys}
           activeIndex={activeIndex}
           activeDuration={activeDuration}
           tick={tick}
           onToggleLock={toggleLock}
+          onToggleMuted={toggleMuted}
           onJumpTo={jumpTo}
           onToggleCollapsed={handleToggleCollapsed}
         />

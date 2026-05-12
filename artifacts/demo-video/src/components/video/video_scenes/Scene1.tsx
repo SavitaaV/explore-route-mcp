@@ -1,97 +1,78 @@
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useVideoContext } from '@/lib/video/VideoContext';
+import { useVoiceover } from '@/lib/video/useVoiceover';
+import { Caption } from './shared';
+
+const VOICEOVER = 'Every great local merchant has the same problem.';
+
+const DOTS = [
+  { cx: '15%', cy: '60%', delay: 0.3 },
+  { cx: '28%', cy: '45%', delay: 0.6 },
+  { cx: '42%', cy: '55%', delay: 0.9 },
+  { cx: '55%', cy: '40%', delay: 1.2 },
+  { cx: '68%', cy: '50%', delay: 1.5 },
+  { cx: '80%', cy: '38%', delay: 1.8 },
+];
 
 export function Scene1() {
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const timers = [
-      setTimeout(() => setPhase(1), 500),
-      setTimeout(() => setPhase(2), 1200),
-      setTimeout(() => setPhase(3), 1800),
-    ];
-    return () => timers.forEach(t => clearTimeout(t));
-  }, []);
+  const { muted } = useVideoContext();
+  useVoiceover(VOICEOVER, muted);
 
   return (
-    <motion.div 
-      className="absolute inset-0 flex flex-col items-center justify-center bg-[#05070A]"
+    <motion.div
+      className="absolute inset-0 flex flex-col items-center justify-center bg-[#05070A] overflow-hidden"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }}
+      exit={{ opacity: 0 }}
       transition={{ duration: 0.8 }}
     >
-      {/* Map Background */}
-      <motion.div 
-        className="absolute inset-0 opacity-20"
-        initial={{ scale: 1.2, rotate: -2 }}
-        animate={{ scale: 1, rotate: 0 }}
-        transition={{ duration: 4, ease: "easeOut" }}
-      >
-        <div className="w-full h-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#96BF48]/20 via-[#0B0E14] to-[#05070A]"></div>
-        {/* Simple grid to simulate map */}
-        <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(#96BF4811 1px, transparent 1px), linear-gradient(90deg, #96BF4811 1px, transparent 1px)', backgroundSize: '4vw 4vw', transform: 'perspective(500px) rotateX(60deg) scale(2)', transformOrigin: 'top center' }}></div>
-      </motion.div>
+      {/* Subtle radial glow */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(74,222,128,0.07), transparent)' }}
+      />
 
-      {/* Path animation */}
-      <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
-        <motion.path
-          d="M 200 800 Q 500 700 800 500 T 1400 400 T 1800 200"
-          fill="none"
-          stroke="#96BF48"
-          strokeWidth="4"
-          strokeDasharray="2000"
-          strokeDashoffset="2000"
-          animate={{ strokeDashoffset: [2000, 0] }}
-          transition={{ duration: 2.5, ease: "easeInOut" }}
-          style={{ filter: 'drop-shadow(0 0 8px rgba(150,191,72,0.8))' }}
-        />
-        {/* Pins */}
-        {[
-          { cx: 200, cy: 800, delay: 0.5 },
-          { cx: 800, cy: 500, delay: 1.2 },
-          { cx: 1400, cy: 400, delay: 1.8 }
-        ].map((pin, i) => (
+      {/* Pulsing route dots */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
+        {DOTS.map((dot, i) => (
           <motion.circle
             key={i}
-            cx={pin.cx}
-            cy={pin.cy}
-            r="12"
-            fill="#5C6AC4"
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ delay: pin.delay, type: "spring", stiffness: 300, damping: 15 }}
-            style={{ filter: 'drop-shadow(0 0 10px rgba(92,106,196,0.8))' }}
+            cx={dot.cx}
+            cy={dot.cy}
+            r="5"
+            fill="#4ade80"
+            initial={{ opacity: 0, scale: 0 }}
+            animate={{ opacity: [0, 0.5, 0.2, 0.5], scale: [0, 1, 0.8, 1] }}
+            transition={{ delay: dot.delay, duration: 1.8, repeat: Infinity, repeatDelay: 0.5 }}
+            style={{ filter: 'drop-shadow(0 0 6px rgba(74,222,128,0.8))' }}
           />
         ))}
+        {/* Connecting path (absolute coords in 1920x1080 viewBox) */}
+        <motion.path
+          d="M 290 648 Q 540 486 806 594 T 1306 540 T 1536 410"
+          fill="none"
+          stroke="#4ade80"
+          strokeWidth="3"
+          strokeDasharray="16 12"
+          strokeOpacity="0.25"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 2.5, ease: 'easeInOut', delay: 0.5 }}
+        />
       </svg>
 
-      <div className="relative z-20 text-center flex flex-col items-center">
-        <motion.h1 
-          className="text-[6vw] font-bold tracking-tighter text-white font-display uppercase"
-          initial={{ y: 50, opacity: 0, clipPath: 'inset(100% 0 0 0)' }}
-          animate={{ y: 0, opacity: 1, clipPath: 'inset(0% 0 0 0)' }}
-          transition={{ duration: 0.8, delay: 0.8, ease: [0.16, 1, 0.3, 1] }}
-        >
-          Scenic Routes
-        </motion.h1>
-        
-        <motion.div
-          className="h-[2px] bg-[#96BF48] mt-4 mb-6"
-          initial={{ width: 0 }}
-          animate={{ width: "100%" }}
-          transition={{ duration: 0.6, delay: 1.2, ease: "easeOut" }}
-        />
+      {/* Main text */}
+      <motion.p
+        className="relative z-10 text-center text-white font-bold px-8"
+        style={{ fontSize: 'clamp(1.6rem, 4vw, 3.5rem)', lineHeight: 1.2, maxWidth: '72%' }}
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1, delay: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      >
+        Every great local merchant has the same problem.
+      </motion.p>
 
-        <motion.p
-          className="text-[2vw] text-gray-400 tracking-wide font-medium"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 1.5 }}
-        >
-          Commerce that walks with you.
-        </motion.p>
-      </div>
+      <Caption text={VOICEOVER} delay={0.8} />
     </motion.div>
   );
 }
