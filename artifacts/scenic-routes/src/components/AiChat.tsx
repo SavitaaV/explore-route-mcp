@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route, LocateFixed, ChevronDown, ChevronRight, ExternalLink, Ghost } from "lucide-react";
+import { Send, MapPin, ShoppingBag, Star, Clock, CheckCircle2, Zap, Navigation, Users, Sparkles, Compass, Route, LocateFixed, ChevronDown, ChevronRight, ExternalLink, Ghost, Bookmark, BookmarkCheck, Copy, Check, X, Trash2 } from "lucide-react";
 
 interface Merchant {
   id: string;
@@ -59,6 +59,42 @@ interface DiscoveryProduct {
   price: string;
   imageUrl: string | null;
   checkoutUrl: string;
+}
+
+interface SavedRoute {
+  id: string;
+  savedAt: string;
+  route: DiscoveryRouteData;
+}
+
+const SAVED_ROUTES_KEY = "explore_saved_routes";
+
+function routeKey(route: DiscoveryRouteData): string {
+  return `${route.intent}||${route.resolvedLocation.lat.toFixed(3)}||${route.resolvedLocation.lng.toFixed(3)}`;
+}
+
+function loadSavedRoutes(): SavedRoute[] {
+  try { return JSON.parse(localStorage.getItem(SAVED_ROUTES_KEY) ?? "[]") as SavedRoute[]; }
+  catch { return []; }
+}
+
+function persistSavedRoutes(routes: SavedRoute[]): void {
+  localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(routes));
+}
+
+function buildShareText(route: DiscoveryRouteData): string {
+  const verifiedCount = route.merchants.filter((m) => m.shopifyStatus === "verified").length;
+  const lines = [
+    `📍 ${route.intent}`,
+    `📌 ${route.resolvedLocation.name.split(",")[0]}`,
+    `🛑 ${route.merchants.length} stops · ${route.totalDistanceKm}km · ~${route.estimatedWalkMinutes}min walk`,
+    `✅ ${verifiedCount} Shopify-verified`,
+    "",
+    ...route.merchants.map((m) => `  ${m.shopifyStatus === "verified" ? "🟢" : "🟡"} ${m.name}`),
+    "",
+    "Discovered via Explore Route MCP",
+  ];
+  return lines.join("\n");
 }
 
 interface ChatMessage {
@@ -515,7 +551,13 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
   );
 }
 
-function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
+function DiscoveryResultCard({ route, isSaved, onSave, copied, onShare }: {
+  route: DiscoveryRouteData;
+  isSaved: boolean;
+  onSave: () => void;
+  copied: boolean;
+  onShare: () => void;
+}) {
   const [showAll, setShowAll] = useState(false);
   const verified = route.merchants.filter((m) => m.shopifyStatus === "verified");
   const events = route.merchants.filter((m) => m.isEvent);
@@ -527,7 +569,22 @@ function DiscoveryResultCard({ route }: { route: DiscoveryRouteData }) {
       <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid #f3f4f6" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
           <Route style={{ width: 12, height: 12, color: "#059669" }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: "#111827" }}>{route.intent}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "#111827", flex: 1 }}>{route.intent}</span>
+          {/* Save / Share action buttons */}
+          <button
+            onClick={onShare}
+            title={copied ? "Copied!" : "Copy route summary"}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center", color: copied ? "#059669" : "#9ca3af", transition: "color 0.15s" }}
+          >
+            {copied ? <Check style={{ width: 11, height: 11 }} /> : <Copy style={{ width: 11, height: 11 }} />}
+          </button>
+          <button
+            onClick={onSave}
+            title={isSaved ? "Remove from saved" : "Save this route"}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", alignItems: "center", color: isSaved ? "#6366f1" : "#9ca3af", transition: "color 0.15s" }}
+          >
+            {isSaved ? <BookmarkCheck style={{ width: 12, height: 12 }} /> : <Bookmark style={{ width: 12, height: 12 }} />}
+          </button>
         </div>
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
           <span style={{ fontSize: 9, color: "#6b7280", padding: "2px 6px", borderRadius: 10, background: "#f3f4f6" }}>
@@ -719,7 +776,7 @@ function JourneyStartCard({ routeContext, onStart }: { routeContext: RouteContex
   );
 }
 
-function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocationSubmit, onStart, routeContext, onGeolocationGrant, onGeolocationDismiss, onCityFallback }: {
+function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocationSubmit, onStart, routeContext, onGeolocationGrant, onGeolocationDismiss, onCityFallback, savedRouteKeys, copiedKey, onSaveRoute, onShareRoute }: {
   msg: ChatMessage; merchants: Merchant[];
   onFocus?: (id: string) => void;
   onEnable?: () => void; onDismiss?: () => void;
@@ -728,6 +785,10 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
   onGeolocationGrant?: (lat: number, lng: number) => void;
   onGeolocationDismiss?: () => void;
   onCityFallback?: (city: string) => void;
+  savedRouteKeys?: Set<string>;
+  copiedKey?: string | null;
+  onSaveRoute?: (route: DiscoveryRouteData) => void;
+  onShareRoute?: (route: DiscoveryRouteData) => void;
 }) {
   const isUser = msg.role === "user";
   return (
@@ -760,7 +821,15 @@ function MessageBubble({ msg, merchants, onFocus, onEnable, onDismiss, onLocatio
         {msg.merchantCard && <MerchantCard merchant={msg.merchantCard} onFocus={onFocus} />}
         {msg.ghostMerchantCard && <UndiscoveredMerchantCard merchant={msg.ghostMerchantCard} />}
         {msg.discoveryLoadingCard && <DiscoveryLoadingCard intent={msg.discoveryLoadingCard.intent} city={msg.discoveryLoadingCard.city} />}
-        {msg.discoveryResultCard && <DiscoveryResultCard route={msg.discoveryResultCard} />}
+        {msg.discoveryResultCard && onSaveRoute && onShareRoute && (
+          <DiscoveryResultCard
+            route={msg.discoveryResultCard}
+            isSaved={savedRouteKeys?.has(routeKey(msg.discoveryResultCard)) ?? false}
+            onSave={() => onSaveRoute(msg.discoveryResultCard!)}
+            copied={copiedKey === routeKey(msg.discoveryResultCard)}
+            onShare={() => onShareRoute(msg.discoveryResultCard!)}
+          />
+        )}
       </div>
     </div>
   );
@@ -799,6 +868,9 @@ export function AiChat({
   const [pendingLocation, setPendingLocation] = useState<string | null>(null);
   const [realLocation, setRealLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(() => loadSavedRoutes());
+  const [showSaved, setShowSaved] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   // conversationId is persisted in localStorage so Claude can pick up where it left off
   const [conversationId, setConversationId] = useState<number | null>(() => {
     const stored = localStorage.getItem(CONVERSATION_STORAGE_KEY);
@@ -1009,6 +1081,54 @@ export function AiChat({
       return null;
     });
   }, []);
+
+  const savedRouteKeys = new Set(savedRoutes.map((s) => routeKey(s.route)));
+
+  const handleSaveRoute = useCallback((route: DiscoveryRouteData) => {
+    const key = routeKey(route);
+    setSavedRoutes((prev) => {
+      let next: SavedRoute[];
+      if (prev.some((s) => routeKey(s.route) === key)) {
+        next = prev.filter((s) => routeKey(s.route) !== key);
+      } else {
+        next = [{ id: `sr-${Date.now()}`, savedAt: new Date().toISOString(), route }, ...prev];
+      }
+      persistSavedRoutes(next);
+      return next;
+    });
+  }, []);
+
+  const handleShareRoute = useCallback((route: DiscoveryRouteData) => {
+    const key = routeKey(route);
+    void navigator.clipboard.writeText(buildShareText(route));
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((prev) => prev === key ? null : prev), 2000);
+  }, []);
+
+  const handleDeleteSaved = useCallback((id: string) => {
+    setSavedRoutes((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      persistSavedRoutes(next);
+      return next;
+    });
+  }, []);
+
+  const handleLoadRoute = useCallback((route: DiscoveryRouteData) => {
+    setShowSaved(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `reload-${Date.now()}`,
+        role: "assistant" as const,
+        content: `Here's your saved route — ${route.intent}.`,
+        timestamp: new Date(),
+        discoveryResultCard: route,
+        skipSources: true,
+      },
+    ]);
+    onDiscoveryResult?.(route);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+  }, [onDiscoveryResult]);
 
   const handleEnable = useCallback(() => { onMcpEnable(); }, [onMcpEnable]);
   const handleDismiss = useCallback(() => {
@@ -1347,6 +1467,21 @@ export function AiChat({
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          {savedRoutes.length > 0 && (
+            <button
+              onClick={() => setShowSaved((v) => !v)}
+              title="Saved routes"
+              style={{
+                display: "flex", alignItems: "center", gap: 3, padding: "3px 8px", borderRadius: 20,
+                background: showSaved ? "#eef2ff" : "#f9fafb",
+                border: `1px solid ${showSaved ? "#c7d2fe" : "#e5e7eb"}`,
+                cursor: "pointer",
+              }}
+            >
+              <Bookmark style={{ width: 9, height: 9, color: showSaved ? "#6366f1" : "#6b7280" }} />
+              <span style={{ fontSize: 9, color: showSaved ? "#6366f1" : "#6b7280", fontWeight: 600 }}>{savedRoutes.length}</span>
+            </button>
+          )}
           {mcpEnabled ? (
             <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, background: "#f0fdf4", border: "1px solid #bbf7d0" }}>
               <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#059669" }} className="animate-pulse" />
@@ -1361,6 +1496,52 @@ export function AiChat({
         </div>
       </div>
 
+      {/* Saved routes drawer — appears below header when bookmark chip is clicked */}
+      {showSaved && (
+        <div style={{ borderBottom: "1px solid #e5e7eb", background: "#fafafa", maxHeight: 220, overflowY: "auto" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px 4px" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "#374151", letterSpacing: 0.2 }}>Saved routes</span>
+            <button onClick={() => setShowSaved(false)} style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex" }}>
+              <X style={{ width: 11, height: 11, color: "#9ca3af" }} />
+            </button>
+          </div>
+          {savedRoutes.length === 0 ? (
+            <p style={{ fontSize: 10, color: "#9ca3af", padding: "4px 14px 10px", margin: 0 }}>No saved routes yet.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "0 8px 8px" }}>
+              {savedRoutes.map((saved) => {
+                const verifiedCount = saved.route.merchants.filter((m) => m.shopifyStatus === "verified").length;
+                const savedDate = new Date(saved.savedAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+                return (
+                  <div key={saved.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", borderRadius: 10, border: "1px solid #f3f4f6", padding: "7px 10px" }}>
+                    <BookmarkCheck style={{ width: 10, height: 10, color: "#6366f1", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 10, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{saved.route.intent}</p>
+                      <p style={{ margin: 0, fontSize: 9, color: "#9ca3af" }}>
+                        {saved.route.resolvedLocation.name.split(",")[0]} · {saved.route.merchants.length} stops · {verifiedCount} verified · {savedDate}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleLoadRoute(saved.route)}
+                      style={{ fontSize: 9, fontWeight: 600, color: "#6366f1", background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 8, padding: "3px 7px", cursor: "pointer", flexShrink: 0 }}
+                    >
+                      Load
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSaved(saved.id)}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0 }}
+                      title="Remove"
+                    >
+                      <Trash2 style={{ width: 10, height: 10, color: "#d1d5db" }} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Messages */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px 8px" }}>
         {messages.map((msg) => (
@@ -1371,6 +1552,10 @@ export function AiChat({
             onGeolocationGrant={handleGeolocationGrant}
             onGeolocationDismiss={handleGeolocationDismiss}
             onCityFallback={handleCityFallback}
+            savedRouteKeys={savedRouteKeys}
+            copiedKey={copiedKey}
+            onSaveRoute={handleSaveRoute}
+            onShareRoute={handleShareRoute}
           />
         ))}
         <div ref={bottomRef} />
