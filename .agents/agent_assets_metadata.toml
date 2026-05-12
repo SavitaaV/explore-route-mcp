@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "6JfkLlQvWAN-dCAGxR4dh"
+uri = "file://artifacts/demo-video/public/assets/wine-bottle.png"
+type = "image"
+title = "wine bottle product"
+
+[[generated]]
+id = "VuyIDZkeg2AmrEIqhXy4x"
+uri = "file://artifacts/demo-video/public/assets/network-bg.png"
+type = "image"
+title = "dark network graph"
