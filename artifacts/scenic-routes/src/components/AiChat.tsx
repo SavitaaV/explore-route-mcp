@@ -778,6 +778,8 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   },
 ];
 
+const CONVERSATION_STORAGE_KEY = "explore_conversation_id";
+
 export function AiChat({
   merchants, routeContext, journeyProgress, journeyStarted,
   mcpEnabled, onMcpEnable, onRouteRequest, onStartJourney,
@@ -791,6 +793,12 @@ export function AiChat({
   const [pendingLocation, setPendingLocation] = useState<string | null>(null);
   const [realLocation, setRealLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  // conversationId is persisted in localStorage so Claude can pick up where it left off
+  const [conversationId, setConversationId] = useState<number | null>(() => {
+    const stored = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    return stored ? Number(stored) : null;
+  });
+  const conversationIdRef = useRef<number | null>(conversationId);
   const realLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -798,6 +806,29 @@ export function AiChat({
   const inlineDiscoveryActiveRef = useRef(false);
   const messageCountRef = useRef(INITIAL_MESSAGES.length);
   const prevRouteRef = useRef<RouteContext | null>(null);
+
+  // Keep the ref in sync whenever state changes
+  useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
+
+  // On mount: create a conversation if we don't have one, so history can be persisted
+  useEffect(() => {
+    if (conversationIdRef.current !== null) return;
+    let cancelled = false;
+    fetch(`${BASE_URL}/api/anthropic/conversations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Explore" }),
+    })
+      .then((r) => r.json())
+      .then((data: { id: number }) => {
+        if (cancelled || !data?.id) return;
+        localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.id));
+        setConversationId(data.id);
+        conversationIdRef.current = data.id;
+      })
+      .catch(() => { /* non-fatal — falls back to stateless */ });
+    return () => { cancelled = true; };
+  }, []);
   const prevDiscoveryRef = useRef<DiscoveryRouteData | null | undefined>(null);
 
   useEffect(() => {
@@ -969,7 +1000,8 @@ export function AiChat({
     const narrativePrompt = `Narrate this ${route.intent} route for me — what should I know before I go?`;
 
     try {
-      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/1/messages`, {
+      const convId = conversationIdRef.current ?? 0;
+      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: narrateAbortRef.current.signal,
@@ -1117,7 +1149,8 @@ export function AiChat({
     let fullText = "";
 
     try {
-      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/1/messages`, {
+      const convId = conversationIdRef.current ?? 0;
+      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,

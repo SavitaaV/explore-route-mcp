@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { db, conversations, messages as messagesTable } from "@workspace/db";
+import { eq, asc } from "drizzle-orm";
 import { computePlanDiscovery } from "./scenic";
 
 const router = Router();
@@ -161,8 +163,32 @@ async function executePlanDiscovery(
   }
 }
 
+// Load conversation history from DB (up to last 20 messages = 10 turns)
+async function loadHistory(convId: number): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+  try {
+    const rows = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.conversationId, convId))
+      .orderBy(asc(messagesTable.createdAt))
+      .limit(20);
+    return rows.map((r) => ({ role: r.role as "user" | "assistant", content: r.content }));
+  } catch {
+    return [];
+  }
+}
+
+// Save a single message to DB (fire-and-forget, non-blocking)
+function saveMessage(convId: number, role: "user" | "assistant", content: string): void {
+  if (!content.trim()) return;
+  db.insert(messagesTable).values({ conversationId: convId, role, content }).catch(() => { /* non-fatal */ });
+}
+
 // POST /api/anthropic/conversations/:id/messages — SSE streaming with MCP tool-calling
 router.post("/anthropic/conversations/:id/messages", async (req, res) => {
+  const convId = Number(req.params.id);
+  const isValidConv = !isNaN(convId) && convId > 0;
+
   const { content, routeContext, merchantContext, userPosition, discoveryContext } = req.body as {
     content: string;
     routeContext?: RouteContext;
@@ -176,6 +202,12 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     return;
   }
 
+  // Load conversation history for multi-turn context
+  const history = isValidConv ? await loadHistory(convId) : [];
+
+  // Save user message immediately so it's persisted even if streaming fails
+  if (isValidConv) saveMessage(convId, "user", content.trim());
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -186,8 +218,17 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
 
+  // Accumulate full assistant text so we can persist it after streaming
+  let fullAssistantText = "";
+
   try {
     const systemPrompt = buildSystemPrompt(routeContext, merchantContext, userPosition, discoveryContext);
+
+    // Build messages array: history + current user turn
+    const messagesArray: Array<{ role: "user" | "assistant"; content: string }> = [
+      ...history,
+      { role: "user", content: content.trim() },
+    ];
 
     const stream = await anthropic.messages.stream({
       model: "claude-sonnet-4-6",
@@ -195,7 +236,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       system: systemPrompt,
       tools: [PLAN_DISCOVERY_TOOL],
       tool_choice: { type: "auto" },
-      messages: [{ role: "user", content: content.trim() }],
+      messages: messagesArray,
     });
 
     let toolUseId: string | null = null;
@@ -209,6 +250,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "input_json_delta") {
         inputJsonAccum += chunk.delta.partial_json;
       } else if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+        fullAssistantText += chunk.delta.text;
         sendEvent("delta", { text: chunk.delta.text });
       }
     }
@@ -232,13 +274,16 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
       sendEvent("discovery_result", routeData);
 
+      // Reset accumulated text — the narrative comes from the follow-up stream
+      fullAssistantText = "";
+
       const followStream = await anthropic.messages.stream({
         model: "claude-sonnet-4-6",
         max_tokens: 512,
         system: systemPrompt,
         tools: [PLAN_DISCOVERY_TOOL],
         messages: [
-          { role: "user", content: content.trim() },
+          ...messagesArray,
           { role: "assistant", content: firstMsg.content },
           {
             role: "user",
@@ -249,6 +294,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
       for await (const chunk of followStream) {
         if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+          fullAssistantText += chunk.delta.text;
           sendEvent("delta", { text: chunk.delta.text });
         }
       }
@@ -263,18 +309,78 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     sendEvent("error", { message: err instanceof Error ? err.message : "Unknown error" });
   } finally {
     res.end();
+    // Persist the assistant's response after streaming completes
+    if (isValidConv && fullAssistantText.trim()) {
+      saveMessage(convId, "assistant", fullAssistantText.trim());
+    }
   }
 });
 
-router.get("/anthropic/conversations", (_req, res) => { res.json([]); });
-router.post("/anthropic/conversations", (req, res) => {
-  const { title } = req.body as { title: string };
-  res.status(201).json({ id: 1, title: title ?? "New conversation", createdAt: new Date().toISOString() });
+// GET /api/anthropic/conversations — list all conversations
+router.get("/anthropic/conversations", async (_req, res) => {
+  try {
+    const rows = await db.select().from(conversations).orderBy(asc(conversations.createdAt));
+    res.json(rows);
+  } catch {
+    res.json([]);
+  }
 });
-router.get("/anthropic/conversations/:id", (req, res) => {
-  res.json({ id: Number(req.params.id), title: "Explore", createdAt: new Date().toISOString(), messages: [] });
+
+// POST /api/anthropic/conversations — create a new conversation
+router.post("/anthropic/conversations", async (req, res) => {
+  const { title } = req.body as { title?: string };
+  try {
+    const [row] = await db
+      .insert(conversations)
+      .values({ title: title?.trim() || "Explore" })
+      .returning();
+    res.status(201).json(row);
+  } catch {
+    res.status(500).json({ error: "Failed to create conversation" });
+  }
 });
-router.delete("/anthropic/conversations/:id", (_req, res) => { res.status(204).end(); });
-router.get("/anthropic/conversations/:id/messages", (_req, res) => { res.json([]); });
+
+// GET /api/anthropic/conversations/:id — get a single conversation with messages
+router.get("/anthropic/conversations/:id", async (req, res) => {
+  const convId = Number(req.params.id);
+  try {
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, convId));
+    if (!conv) { res.status(404).json({ error: "Not found" }); return; }
+    const msgs = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.conversationId, convId))
+      .orderBy(asc(messagesTable.createdAt));
+    res.json({ ...conv, messages: msgs });
+  } catch {
+    res.status(500).json({ error: "Failed to load conversation" });
+  }
+});
+
+// DELETE /api/anthropic/conversations/:id — delete a conversation and its messages
+router.delete("/anthropic/conversations/:id", async (req, res) => {
+  const convId = Number(req.params.id);
+  try {
+    await db.delete(conversations).where(eq(conversations.id, convId));
+    res.status(204).end();
+  } catch {
+    res.status(500).json({ error: "Failed to delete conversation" });
+  }
+});
+
+// GET /api/anthropic/conversations/:id/messages — list messages for a conversation
+router.get("/anthropic/conversations/:id/messages", async (req, res) => {
+  const convId = Number(req.params.id);
+  try {
+    const msgs = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.conversationId, convId))
+      .orderBy(asc(messagesTable.createdAt));
+    res.json(msgs);
+  } catch {
+    res.json([]);
+  }
+});
 
 export default router;
