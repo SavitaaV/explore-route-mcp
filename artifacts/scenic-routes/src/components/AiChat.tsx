@@ -346,7 +346,13 @@ function DiscoveryMerchantRow({ m, isLast }: { m: DiscoveryMerchant; isLast: boo
         const res = await fetch(`${BASE_URL}/api/merchant-card`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ merchantId: m.placeId, merchantName: m.name, merchantType: m.type }),
+          body: JSON.stringify({
+            merchantId: m.placeId,
+            merchantName: m.name,
+            merchantType: m.type,
+            shopifyStatus: m.shopifyStatus,
+            checkoutUrl: m.checkoutUrl ?? undefined,
+          }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as { products?: DiscoveryProduct[] };

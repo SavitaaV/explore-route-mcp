@@ -570,10 +570,12 @@ router.get("/merchants", async (req, res) => {
 
 // POST /api/merchant-card
 router.post("/merchant-card", async (req, res) => {
-  const { merchantId, merchantName, merchantType } = req.body as {
+  const { merchantId, merchantName, merchantType, shopifyStatus, checkoutUrl: incomingCheckoutUrl } = req.body as {
     merchantId: string;
     merchantName: string;
     merchantType: string;
+    shopifyStatus?: "verified" | "ghost";
+    checkoutUrl?: string;
   };
 
   if (!merchantId || !merchantName) {
@@ -597,9 +599,26 @@ router.post("/merchant-card", async (req, res) => {
       walkMinutes: 2,
     };
 
-    // Try live Shopify Global Catalog first; fall back to curated if unavailable or no match
     const type = merchantType ?? "boutique";
-    const catalogProducts = await searchCatalog(merchantName, { limit: 3, category: type });
+    let catalogProducts: CatalogProduct[] = [];
+
+    // Only query the catalog for verified Shopify merchants — ghost merchants are not in the catalog
+    if (shopifyStatus !== "ghost") {
+      // 1. Domain-first search: verified merchants have a real Shopify checkoutUrl from discovery.
+      //    Searching by shop domain (e.g. "peller.com") is more precise than by name.
+      if (incomingCheckoutUrl) {
+        const domain = normalizeDomain(incomingCheckoutUrl);
+        // Extract the meaningful part of the domain (strip TLD suffixes) for the catalog query
+        const domainQuery = domain.replace(/\.(myshopify\.com|shopify\.com|com|ca|net|org)$/, "").replace(/[-_]/g, " ");
+        catalogProducts = await searchCatalog(domainQuery, { limit: 3, category: type });
+      }
+
+      // 2. Name-based fallback: search by merchant name if domain search found nothing
+      if (catalogProducts.length === 0) {
+        catalogProducts = await searchCatalog(merchantName, { limit: 3, category: type });
+      }
+    }
+
     const source: "shopify-catalog" | "curated" = catalogProducts.length > 0 ? "shopify-catalog" : "curated";
     const products = catalogProducts.length > 0
       ? catalogProducts.map((p: CatalogProduct) => ({
