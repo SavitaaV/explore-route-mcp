@@ -135,9 +135,6 @@ interface AiChatProps {
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-// Location intent detection — triggers geolocation card before sending to Claude
-const LOCATION_INTENT = /\b(near me|nearby|around (me|here)|find me|what'?s? (close|near|around)|where (am i|i am)|local|close by|in my area|walking distance|from here|explore here|what can i find|what'?s? around|what'?s? near)\b/i;
-
 function getMerchantEmoji(type: string) {
   switch (type) {
     case "winery": return "🍷";
@@ -1389,18 +1386,6 @@ export function AiChat({
       locOverride !== undefined ? locOverride
       : realLocationRef.current ?? (userPosition ? { lat: userPosition.lat, lng: userPosition.lng } : null);
 
-    // Location intent detected and no location available → show geolocation card, hold message
-    if (LOCATION_INTENT.test(content) && !effectiveLoc) {
-      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
-      setPendingMessage(content);
-      setMessages((prev) => [
-        ...prev,
-        userMsg,
-        { id: `geo-${Date.now()}`, role: "assistant" as const, content: "To find what's around you, I need to know where you are.", timestamp: new Date(), geolocationCard: true, skipSources: true },
-      ]);
-      return;
-    }
-
     const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
@@ -1506,6 +1491,22 @@ export function AiChat({
                   return updated;
                 });
                 onDiscoveryResult?.(routeData);
+              } else if (currentEventType === "location_permission_required") {
+                // Claude detected discovery intent but has no location — show permission card
+                const reason = (rawData.reason as string | undefined)
+                  ?? "To find the best spots near you, I'd like to use your current location — would that be ok?";
+                setPendingMessage(content);
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `geo-${Date.now()}`,
+                    role: "assistant" as const,
+                    content: reason,
+                    timestamp: new Date(),
+                    geolocationCard: true,
+                    skipSources: true,
+                  },
+                ]);
               } else if (currentEventType === "delta" || currentEventType === "") {
                 const text = (rawData as { text?: string }).text;
                 if (text) {

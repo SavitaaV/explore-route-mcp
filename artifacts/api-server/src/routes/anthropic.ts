@@ -43,6 +43,24 @@ interface DiscoveryContext {
   estimatedWalkMinutes: number;
 }
 
+// request_location_permission tool — Claude calls this when it detects discovery
+// intent but the user's coordinates haven't been shared yet.
+const REQUEST_LOCATION_TOOL = {
+  name: "request_location_permission",
+  description:
+    "Call this when you detect the user wants to discover or find places nearby but you do not have their lat/lng coordinates and they haven't named a specific city. Do NOT call plan_discovery_route without location data. Call this tool first — it will ask the user for permission to share their location. Once location is granted, the user's next message will include coordinates and you can call plan_discovery_route.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      reason: {
+        type: "string",
+        description: "A single professional sentence explaining why you need their location (e.g. 'To find the best spots near you, I'd like to use your current location — would that be ok?').",
+      },
+    },
+    required: ["reason"],
+  },
+} as const;
+
 // plan_discovery_route tool definition for Claude
 const PLAN_DISCOVERY_TOOL = {
   name: "plan_discovery_route",
@@ -119,6 +137,10 @@ ${discoveryContext.merchants.map((m, i) => {
     ? `Current local time: ${localTime}. Use this to make time-aware recommendations — e.g. suggest cafés in the morning, lunch spots at noon, wine bars or restaurants in the evening, and note if a place is likely closed right now.`
     : "";
 
+  const locationRule = userPosition
+    ? ""
+    : `IMPORTANT: You have no lat/lng for this user yet. If they express any discovery intent (find, explore, nearby, around me, what's close, coffee/wine/food/market near me, etc.) and have not named a specific city, you MUST call request_location_permission before plan_discovery_route. Never invent or assume coordinates.`;
+
   return `You are a local companion who walks alongside people and notices things worth stopping for. You are not a shopping assistant. You do not use words like "merchant", "vendor", "commerce", "checkout", "Shopify", or "catalog" in conversation — ever. These are invisible infrastructure.
 
 You speak like someone who genuinely knows an area. Your default is silence. You say something only when there is a specific, genuine reason — a timing signal, a story, a fleeting window. When you do speak, you say one thing well. Not a list. One sentence that makes the person feel something, then one practical fact at most.
@@ -128,7 +150,7 @@ You help people discover places and experiences. A "merchant" is just "a place".
 MCP tool available:
 plan_discovery_route — call this when someone describes a mood, craving, or experience they want (coffee, wine, handmade things, street food, live music, vintage finds). Pass the intent, and either their lat/lng coordinates (preferred) or a city name.
 
-${timeInfo ? `${timeInfo}\n` : ""}${positionInfo}
+${timeInfo ? `${timeInfo}\n` : ""}${positionInfo}${locationRule ? `\n${locationRule}` : ""}
 ${routeInfo ? `\n${routeInfo}` : ""}
 ${placeList ? `\nPlaces on or near this walk:\n${placeList}` : ""}${discoverySection}
 
@@ -244,7 +266,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system: systemPrompt,
-      tools: [PLAN_DISCOVERY_TOOL],
+      tools: [REQUEST_LOCATION_TOOL, PLAN_DISCOVERY_TOOL],
       tool_choice: { type: "auto" },
       messages: messagesArray,
     });
@@ -267,7 +289,13 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
     const firstMsg = await stream.finalMessage();
 
-    if (firstMsg.stop_reason === "tool_use" && toolUseId && toolUseName === "plan_discovery_route") {
+    if (firstMsg.stop_reason === "tool_use" && toolUseId && toolUseName === "request_location_permission") {
+      let toolInput: { reason?: string } = {};
+      try { toolInput = JSON.parse(inputJsonAccum || "{}"); } catch { /* use defaults */ }
+      const reason = toolInput.reason ?? "To find the best spots near you, I'd like to use your current location — would that be ok?";
+      sendEvent("location_permission_required", { reason });
+      sendEvent("done", { usage: firstMsg.usage, stopReason: "location_permission_required" });
+    } else if (firstMsg.stop_reason === "tool_use" && toolUseId && toolUseName === "plan_discovery_route") {
       let toolInput: { intent?: string; city?: string; lat?: number; lng?: number; radius?: number } = {};
       try { toolInput = JSON.parse(inputJsonAccum || "{}"); } catch { /* use defaults */ }
 
