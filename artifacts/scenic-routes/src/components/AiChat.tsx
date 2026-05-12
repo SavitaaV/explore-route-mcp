@@ -1149,8 +1149,25 @@ export function AiChat({
     let fullText = "";
 
     try {
-      const convId = conversationIdRef.current ?? 0;
-      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId}/messages`, {
+      // Ensure a conversation exists — create one lazily if mount effect hasn't finished yet
+      let convId = conversationIdRef.current;
+      if (!convId) {
+        try {
+          const r = await fetch(`${BASE_URL}/api/anthropic/conversations`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "Explore" }),
+          });
+          const data = (await r.json()) as { id: number };
+          if (data?.id) {
+            localStorage.setItem(CONVERSATION_STORAGE_KEY, String(data.id));
+            setConversationId(data.id);
+            conversationIdRef.current = data.id;
+            convId = data.id;
+          }
+        } catch { /* non-fatal — proceed without persistence */ }
+      }
+      const res = await fetch(`${BASE_URL}/api/anthropic/conversations/${convId ?? 0}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortRef.current.signal,

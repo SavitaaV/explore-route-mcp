@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, conversations, messages as messagesTable } from "@workspace/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, desc } from "drizzle-orm";
 import { computePlanDiscovery } from "./scenic";
 
 const router = Router();
@@ -163,16 +163,20 @@ async function executePlanDiscovery(
   }
 }
 
-// Load conversation history from DB (up to last 20 messages = 10 turns)
+// Load the most recent 20 messages for a conversation (10 turns of context).
+// We order DESC to get the latest rows, then reverse so they're chronological
+// for the Anthropic messages array.
 async function loadHistory(convId: number): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
   try {
     const rows = await db
       .select()
       .from(messagesTable)
       .where(eq(messagesTable.conversationId, convId))
-      .orderBy(asc(messagesTable.createdAt))
+      .orderBy(desc(messagesTable.createdAt))
       .limit(20);
-    return rows.map((r) => ({ role: r.role as "user" | "assistant", content: r.content }));
+    return rows
+      .reverse()
+      .map((r) => ({ role: r.role as "user" | "assistant", content: r.content }));
   } catch {
     return [];
   }
